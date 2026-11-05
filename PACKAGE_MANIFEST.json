@@ -3,13 +3,13 @@
   "files": [
     {
       "path": ".gitignore",
-      "bytes": 154,
-      "sha256": "672f2fdb3d280e3e1b0e146548f0e495c220d97290080637d66ea9eb9786917b"
+      "bytes": 228,
+      "sha256": "c491f9635f76ced555947a2bf7212a2b061bbeb392aae9c0b07282f36f9fea7e"
     },
     {
       "path": "README.md",
-      "bytes": 71439,
-      "sha256": "484ecb47448ac13dfb1367364f40bb6dab464dc7999877f580dd57ae93f68fd5"
+      "bytes": 71445,
+      "sha256": "ce52783d4b0ae30653e3fd1ac3090920c38ac240cb74d541da838e9720974c86"
     },
     {
       "path": "configs/capture.daily.yaml",
@@ -88,8 +88,8 @@
     },
     {
       "path": "docs/annotation.md",
-      "bytes": 15313,
-      "sha256": "e500aced122903f3c3dca7d0ef9a0a4def6ef8d024416244fd3bcf345132609d"
+      "bytes": 16444,
+      "sha256": "10aced1cf36a3521cb0cf5009a4a1a648564bccce5154ec531c93c4f2eaa7721"
     },
     {
       "path": "docs/architecture.md",
@@ -143,8 +143,8 @@
     },
     {
       "path": "docs/gui.md",
-      "bytes": 14550,
-      "sha256": "bd9f3759ffe5346e2b93dbe9dcab3329863774a259574d2ddec5e836340f878a"
+      "bytes": 14608,
+      "sha256": "fc1067dd25ae84aa8f7de55804a75684fb983f26a5befab246c2a462e8f39b7c"
     },
     {
       "path": "docs/gui_v1_validation.json",
@@ -563,13 +563,13 @@
     },
     {
       "path": "src/convest/annotation/prompts.py",
-      "bytes": 5276,
-      "sha256": "318ab74f0d9c6b5e9b1d2c8e637a21d8f3ded867989a9e4ffcbf7c24e704a571"
+      "bytes": 7227,
+      "sha256": "dc21050c7f51158e9d8547de968313efd088203f86e2cd6c4d7b6dfc719f5a11"
     },
     {
       "path": "src/convest/annotation/provider.py",
-      "bytes": 14956,
-      "sha256": "b95e7084c6d2a8c43047f8e844eede1e2246f61349b84947254aa03c6be629e3"
+      "bytes": 16127,
+      "sha256": "b39682512955df278938a3c919eb231fa976bf067f6ea650511d0d82b6a0e33b"
     },
     {
       "path": "src/convest/annotation/rotation_rules.py",
@@ -578,8 +578,13 @@
     },
     {
       "path": "src/convest/annotation/service.py",
-      "bytes": 19247,
-      "sha256": "33f49cfc2f20f40a93b1916b1686cd88f7bb164fa5d2f7c4e47c53f48ce026cd"
+      "bytes": 20316,
+      "sha256": "428bc54543a5d55109eb1348c62b331dfd5589aa81540343f4a82853764d4234"
+    },
+    {
+      "path": "src/convest/annotation/views.py",
+      "bytes": 1118,
+      "sha256": "1b758085ea4ffcc2a900921a97c58a5a04f4d4c2d75495a0c8921b6eb80dc0ba"
     },
     {
       "path": "src/convest/annotation/workflow.py",
@@ -698,8 +703,8 @@
     },
     {
       "path": "src/convest/gui/static/annotation.js",
-      "bytes": 10387,
-      "sha256": "763ea83c4a97928a54c4432980ac5fa72a36dffd8311d534f7c90f3bd5208b42"
+      "bytes": 10419,
+      "sha256": "8b1bb8fd822c827fef5ce81de7671b7b2bc445166567f8b934a7e416fecfdc91"
     },
     {
       "path": "src/convest/gui/static/app.js",
@@ -713,8 +718,8 @@
     },
     {
       "path": "src/convest/gui/static/index.html",
-      "bytes": 21971,
-      "sha256": "f672925fb87ddbdcd6e53ed6fe3e284536c918b86d6a942e06e32a1df6019639"
+      "bytes": 21986,
+      "sha256": "d988f543a8837ff79b91092e8fcbdac45bf1971992aed24a19572a2426c6af9a"
     },
     {
       "path": "src/convest/gui/static/style.css",
@@ -960,6 +965,11 @@
       "path": "tests/test_annotation_granularity.py",
       "bytes": 8989,
       "sha256": "8a1ebe7f78b5773fc6bee492ed6fbf0ff9c3f960e472f8bba9ad573024ce73ab"
+    },
+    {
+      "path": "tests/test_annotation_multiview.py",
+      "bytes": 8542,
+      "sha256": "f517e8f0cb633a8994a6fe5fc93a7229c26e971e73547a7208f390b29f3a3549"
     },
     {
       "path": "tests/test_annotation_workflow.py",

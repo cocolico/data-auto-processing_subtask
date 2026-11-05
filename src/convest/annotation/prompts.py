@@ -1,8 +1,37 @@
 """Compact seven-action annotation instructions; coarse stages are derived in code."""
-PROTOCOL_ID = 'tomato-seven-actions-compact-v6'
+PROTOCOL_ID = 'tomato-seven-actions-multiview-v7'
 TOMATO_WORKFLOW_PROMPT = '''Annotate ONE dual-arm Franka robot with {hand} dexterous hands.
-Use visible video actions, not a guessed plan. cam0 image-left is the robot's
-LEFT hand and image-right its RIGHT hand. Track identity across the image center.
+Use visible video actions, not a guessed plan.
+
+SYNCHRONIZED CAMERA VIEWS
+You receive THREE videos of the SAME episode, not three consecutive clips.
+cam0 is the external overview: image-left is the robot's LEFT hand and
+image-right its RIGHT hand. Track identity across the image center.
+cam1 is the RIGHT wrist camera, mounted on the robot's RIGHT hand/arm.
+cam2 is the LEFT wrist camera, mounted on the robot's LEFT hand/arm.
+Camera ownership does not imply that every visible hand belongs to that side.
+Do not infer hand identity from image-left/right in the wrist views, mirror
+those views, or swap cam1 and cam2. A wrist camera moves with its own arm;
+background motion in that view alone is not proof of object or stem rotation.
+All views have the same clip-local zero, FPS, frame count and duration.
+Compare the SAME timestamps across views; never concatenate their durations.
+
+Build one timeline from cam0's global motion, tray locations and hand positions.
+Cross-check cam1 for right-hand truss grasp, release and finger-driven stem
+rotation; cross-check cam2 for left-hand approach, fruit contact, grasp and
+detachment. Use the clearest synchronized view to resolve cam0 occlusion and
+action boundaries, then confirm transport and placement in the overview.
+Check before/during/after contact rather than inferring success from closure.
+Wrist translation, camera motion, occlusion or a disappearing fruit alone do
+not prove detachment, placement or stem rotation. Do not double-count an action
+seen in several views. If views disagree, recheck the same interval and use
+clear visible evidence; leave target_id/decision/count null when unresolved.
+Track fruit identity across cameras only when correspondence is reliable.
+For return_condition.left_side_count, LEFT SIDE always means cam0 image-left
+of the RIGHT thumb/index grasp, never a wrist view's image-left. Wrist views
+may clarify attached fruit only when their correspondence to cam0 is clear.
+Use all views to check END, but cam0 must show BOTH hands low and stationary.
+Output one shared timeline with the unchanged seven-field JSON schema.
 Do not infer successful picking from finger closure, occlusion or an empty hand
 visiting a tray. Label the action being performed without adding an outcome claim.
 

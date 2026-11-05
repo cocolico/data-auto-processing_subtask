@@ -759,7 +759,7 @@ RGB 使用 H264 有损编码；深度与触觉使用 Parquet 原生定长数值�
 | 特征 | 内容 |
 | --- | --- |
 | `observation.state` / `action` | 关节状态与绝对动作 |
-| `observation.images.cam0` / `cam1` / `cam2` | 头部、左腕、右腕 RGB |
+| `observation.images.cam0` / `cam1` / `cam2` | 头部总览、右腕、左腕 RGB |
 | `observation.depths.cam0` | 原始 uint16 深度 |
 | `observation.tactile.{side}.{finger}.deformation` | 原始 mono8 形变图，仅 Sharpa |
 | `observation.tactile.{side}.{finger}.wrench` | float64 力 xyz、力矩 xyz，仅 Sharpa |

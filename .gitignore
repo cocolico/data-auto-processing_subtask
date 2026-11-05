@@ -15,3 +15,5 @@ runtime/
 !.env.example
 *.pem
 *.key
+
+.vscode/browse.vc.db*

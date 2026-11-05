@@ -8,8 +8,9 @@ import time
 from .native import atomic_json
 from .events import EVENT_FIELDS, validate_events
 
-from .prompts import TOMATO_WORKFLOW_PROMPT as PROMPT
+from .prompts import TOMATO_WORKFLOW_PROMPT as PROMPT, PROTOCOL_ID
 from . import workflow
+from .views import VIEWS, videos_for
 
 
 
@@ -198,11 +199,8 @@ class ArkProvider:
             from .client import create_client
             client=create_client(key,timeout=420)
         except ImportError:raise Failure('credentials','当前运行环境缺少 annotation 依赖，请安装后重新开始任务')
-        video=Path(job['video'])
-        if video.stat().st_size > 512*1024*1024:
-            client.close()
-            raise Failure('unsupported','视频超过当前 Files API 本地上传限制，未自动切段')
-        sent=False;file_id=None
+        sent=False
+        uploads=[]
         request_file=work/'request.json'
         request=json.loads(request_file.read_text()) if request_file.exists() else {}
         try:
@@ -211,32 +209,50 @@ class ArkProvider:
                 progress(phase='recovering_response')
                 response=client.responses.retrieve(request['response_id'])
             else:
-                atomic_json(request_file,{'phase':'uploading','started_ns':time.time_ns()})
-                progress(phase='uploading_video')
-                with video.open('rb') as stream:
-                    file=client.files.create(file=stream,purpose='user_data',extra_body={
-                        'preprocess_configs':{'video':{'fps':job['settings']['fps']}}})
-                file_id=file.id
-                if not file_id:raise Failure('network','Files API 未返回文件 ID')
-                atomic_json(work/'remote_file.json',{'file_id':file_id,'cleanup':'pending'})
-                deadline=time.monotonic()+420
-                while True:
-                    file=client.files.retrieve(file_id)
-                    status=str(getattr(file,'status','')).lower()
-                    if status in ('error','failed','expired','cancelled','canceled'):
-                        raise Failure('unsupported','视频预处理失败：'+str(getattr(file,'status','')))
-                    if status not in ('processing','pending'):break
-                    if time.monotonic()>deadline: raise Failure('network','视频预处理等待超时')
-                    time.sleep(1)
-                request={'phase':'sent','file_id':file_id,'started_ns':time.time_ns()}
+                try:
+                    videos=videos_for(job)
+                except (OSError, ValueError, KeyError) as exc:
+                    raise Failure('unsupported',str(exc)) from exc
+                for camera, video in videos.items():
+                    if video.stat().st_size > 512*1024*1024:
+                        raise Failure('unsupported',f'{camera} 视频超过当前 Files API 本地上传限制，未自动切段')
+                atomic_json(request_file,{'phase':'uploading','views':list(videos),'started_ns':time.time_ns()})
+                content=[{'type':'input_text','text':
+                    f"Three synchronized views of ONE episode. Duration={job['length']/job['fps']:.9f} seconds; "
+                    f"dataset FPS={job['fps']}; frames={job['length']}. "
+                    f"Task context: {json.dumps(job['task'])}"+
+                    ('\nPrevious validation error: '+job['retry_feedback'] if job.get('retry_feedback') else '')}]
+                for camera, video in videos.items():
+                    progress(phase='uploading_video',camera=camera)
+                    with video.open('rb') as stream:
+                        file=client.files.create(file=stream,purpose='user_data',extra_body={
+                            'preprocess_configs':{'video':{'fps':job['settings']['fps']}}})
+                    file_id=file.id
+                    if not file_id:raise Failure('network',f'{camera}: Files API 未返回文件 ID')
+                    # One registry per upload survives partial three-view failures.
+                    registry=work/camera/'remote_file.json'
+                    uploads.append((file_id,registry))
+                    atomic_json(registry,{'file_id':file_id,'camera':camera,'cleanup':'pending'})
+                    deadline=time.monotonic()+420
+                    while True:
+                        file=client.files.retrieve(file_id)
+                        status=str(getattr(file,'status','')).lower()
+                        if status in ('error','failed','expired','cancelled','canceled'):
+                            raise Failure('unsupported',f'{camera}: 视频预处理失败：{status}')
+                        if status not in ('processing','pending'):break
+                        if time.monotonic()>deadline:raise Failure('network',f'{camera}: 视频预处理等待超时')
+                        time.sleep(1)
+                    content.extend([
+                        {'type':'input_text','text':f'{camera}: {VIEWS[camera]} Shared episode timestamps, zero offset.'},
+                        {'type':'input_video','file_id':file_id}])
+                request={'phase':'sent','protocol':PROTOCOL_ID,'file_ids':{c:f for c,(f,_) in zip(videos,uploads)},
+                         'started_ns':time.time_ns()}
                 atomic_json(request_file,request)
                 progress(phase='waiting_model')
                 sent=True
                 response=client.responses.create(model=job['settings']['model'],
                     instructions=PROMPT.format(hand='Wuji' if job['robot']=='wuji' else 'Sharpa'),
-                    input=[{'role':'user','content':[
-                        {'type':'input_text','text':f"Duration={job['length']/job['fps']:.9f} seconds. Task context: {json.dumps(job['task'])}"+('\nPrevious validation error: '+job['retry_feedback'] if job.get('retry_feedback') else '')},
-                        {'type':'input_video','file_id':file_id}]}],
+                    input=[{'role':'user','content':content}],
                     max_output_tokens=24000,reasoning={'effort':'medium'},extra_body={'thinking':{'type':'enabled'}})
             request.update(phase='returned',response_id=getattr(response,'id',None))
             atomic_json(request_file,request)
@@ -246,15 +262,16 @@ class ArkProvider:
             usage=getattr(response,'usage',None)
             usage=usage.model_dump() if hasattr(usage,'model_dump') else {}
             # Save raw response durably BEFORE schema validation.
-            atomic_json(response_file,{'text':text,'usage':usage,'response_id':getattr(response,'id',None)})
+            atomic_json(response_file,{'text':text,'usage':usage,'response_id':getattr(response,'id',None),
+                'protocol':request.get('protocol'),'cameras':list(request.get('file_ids',{}))})
             return normalize(text,job['length'],job['fps'],require_structured=True,require_events=True,require_workflow=True),usage
         except Exception as exc:
             raise classify(exc,key,sent) from exc
         finally:
-            if file_id:
+            for file_id,registry in uploads:
                 try:
                     client.with_options(timeout=15).files.delete(file_id)
-                    atomic_json(work/'remote_file.json',{'file_id':file_id,'cleanup':'completed'})
+                    atomic_json(registry,{'file_id':file_id,'cleanup':'completed'})
                 except Exception:
                     pass  # Durable pending registry is retried by worker cleanup.
             client.close()

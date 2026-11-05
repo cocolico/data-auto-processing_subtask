@@ -57,7 +57,7 @@ window.annotationUI = (() => {
     const data=await api("/api/annotation/preview?"+new URLSearchParams({task,job:id}));
     if(task!==selected)return;
     preview=data;previewTask=task;
-    $("annotation-camera").innerHTML=data.cameras.filter(c=>/^observation\.images\.cam[012]$/.test(c)).map(c=>`<option value="${esc(c)}">${esc(c)}${c.endsWith("cam0")?" · 第一视角":" · 手腕视角"}</option>`).join("");
+    $("annotation-camera").innerHTML=data.cameras.filter(c=>/^observation\.images\.cam[012]$/.test(c)).map(c=>`<option value="${esc(c)}">${esc(c)}${c.endsWith("cam0")?" · 外部总览":c.endsWith("cam1")?" · 右手腕":" · 左手腕"}</option>`).join("");
     $("annotation-camera").value="observation.images.cam0";
     $("annotation-preview-info").textContent=`${data.frames} 帧 · ${data.fps} fps · ${data.steps.length} 个自然步骤 · ${data.model}`+(data.video_available?"":" · 本地视频已释放，文字结果仍可查看");
     const coarse=data.granularity?.coarse_steps||[];

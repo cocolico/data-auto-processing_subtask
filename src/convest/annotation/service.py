@@ -15,6 +15,7 @@ from . import credentials
 from .compact import project as compact_steps
 from .native import read_json, rows, path_for, sha256, inspect, export_dataset, validate_output
 from .provider import ArkProvider, Failure, classify, redact
+from .views import videos_for
 
 # Legacy terminal state is readable; new work never enters it or rewrites published batches.
 TERMINAL={'completed','excluded','history_skipped','needs_review'}
@@ -148,11 +149,18 @@ def process_one(spec,db,provider=None):
             if not key:raise Failure('credentials','尚未配置豆包 API Key')
             video=Path(job['video'])
             if not video.is_file():raise Failure('unsupported','标注源视频不可用，保留原作业')
-            # Verify source timeline before any model request. No forced segmentation.
+            # Production requires three synchronized views, including for old
+            # pending queue payloads. Injected offline providers may use fixtures.
+            videos={'cam0':video}
             if provider is None:
                 from convest.training.adatempo.lerobot_video import inspect_video
-                info=read_json(Path(job['source'])/'meta/info.json')
-                inspect_video(video,job['length'],job['fps'],info['features']['observation.images.cam0']['shape'])
+                try:
+                    videos=videos_for(job)
+                    info=read_json(Path(job['source'])/'meta/info.json')
+                    for camera,path in videos.items():
+                        inspect_video(path,job['length'],job['fps'],info['features']['observation.images.'+camera]['shape'])
+                except (OSError,ValueError,KeyError) as exc:
+                    raise Failure('unsupported',f'三视角标注输入校验失败：{exc}') from exc
             old_work=root/'requests'/identity/f'call-{runs:04d}'
             reuse=(row['state']=='processing' and runs>0 and (old_work/'response.json').exists())
             if row['state']=='processing' and not reuse and (old_work/'request.json').exists():
@@ -165,12 +173,18 @@ def process_one(spec,db,provider=None):
             request_work.mkdir(parents=True,exist_ok=True)
             update(db,'episodes',identity,state='processing',runs=runs,error=None)
             progress(phase='preparing_video')
-            # Source hash is persisted outside the delivered dataset.
-            if not (root/'sources'/f'{identity}.json').exists():
-                durable_json(root/'sources'/f'{identity}.json',{'video':str(video),'sha256':sha256(video),
-                    'length':job['length'],'fps':job['fps'],'recording_id':job['recording_id']})
-            elif sha256(video)!=read_json(root/'sources'/f'{identity}.json')['sha256']:
-                raise Failure('unsupported','标注源视频在请求之间发生变化，保留并隔离该条数据')
+            # Persist/check every view, not only cam0, across retries and sealing.
+            evidence_path=root/'sources'/f'{identity}.json'
+            hashes={camera:{'video':str(path),'sha256':sha256(path)} for camera,path in videos.items()}
+            if evidence_path.exists():
+                evidence=read_json(evidence_path)
+                previous=evidence.get('videos',{'cam0':{'sha256':evidence['sha256']}})
+                if any(camera not in hashes or hashes[camera]['sha256']!=entry['sha256']
+                       for camera,entry in previous.items()):
+                    raise Failure('unsupported','标注源视频在请求之间发生变化，保留并隔离该条数据')
+            durable_json(evidence_path,{'video':str(video),'sha256':hashes['cam0']['sha256'],
+                'videos':hashes,'length':job['length'],'fps':job['fps'],
+                'recording_id':job['recording_id']})
             labels,usage=engine.annotate(job,key,request_work,progress)
             from .compact import project, validate as validate_compact
             labels = project(labels)
@@ -245,9 +259,12 @@ def build_batches(spec,db):
                     payload=json.loads(job_row['payload'])
                     episode=source_data['episodes'][job_row['source_ep']]
                     evidence=read_json(root/'sources'/f"{job_row['id']}.json")
-                    current_video=source/path_for(source_data['info'],job_row['source_ep'],video_key='observation.images.cam0')
-                    if episode['length']!=payload['length'] or sha256(current_video)!=evidence['sha256']:
+                    if episode['length']!=payload['length']:
                         raise ValueError('封存视频与标注源不一致，保留并停止该批交付')
+                    for camera,entry in evidence.get('videos',{'cam0':{'sha256':evidence['sha256']}}).items():
+                        current_video=source/path_for(source_data['info'],job_row['source_ep'],video_key='observation.images.'+camera)
+                        if sha256(current_video)!=entry['sha256']:
+                            raise ValueError(f'封存 {camera} 视频与标注源不一致，保留并停止该批交付')
                 if output.exists():
                     report=validate_output(source_data,output,labels)
                 else:
