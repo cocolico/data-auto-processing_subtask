@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>工作站清洗与上传控制台 · 厘清智能</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header aria-label="工作站清洗与上传控制台">
+      <img
+        class="brand-logo"
+        src="/brand-logo.png"
+        width="2172"
+        height="724"
+        alt="厘清智能"
+      />
+      <div class="header-right">
+        <span id="server-state" class="pill">连接本机…</span
+        ><span id="disk" class="muted"></span>
+      </div>
+    </header>
+    <nav class="workflow-sidebar" aria-label="功能导航">
+      <button data-view="workflow" class="active">工作流总览</button>
+      <button data-view="annotation">数据标注</button>
+      <button data-view="preview">结果预览</button>
+      <button data-view="resources">连接与资源</button>
+      <label>当前任务<select id="annotation-task"></select></label>
+    </nav>
+    <main id="view-workflow">
+      <section class="workspace">
+        <article class="card sources">
+          <div class="card-head">
+            <div>
+              <span class="step">01</span>
+              <h2>本机读取</h2>
+            </div>
+            <span class="tag">自动识别 A / B</span>
+          </div>
+          <div id="task-list" class="task-list"></div>
+          <div class="task-editor">
+            <div class="two-fields">
+              <label>项目<input id="project" data-task="project" /></label
+              ><label
+                >手型<select id="robot" data-task="robot">
+                  <option value="sharpa">Sharpa · 116 / 58</option>
+                  <option value="wuji">Wuji · 108 / 54</option>
+                </select></label
+              >
+            </div>
+            <div class="name-fields">
+              <label
+                >任务名称<input
+                  id="name"
+                  data-task="name"
+                  title="仅用于区分界面中的任务，不影响数据和目录命名"
+                  placeholder="例如：番茄 · Sharpa · 场景一"
+              /></label>
+              <label
+                >场景名称<input
+                  id="scene"
+                  data-task="scene"
+                  list="scene-options"
+              /></label>
+              <datalist id="scene-options">
+                <option value="full-block-more"></option>
+                <option value="full-block-one"></option>
+                <option value="no-block-more"></option>
+                <option value="no-block-one"></option>
+              </datalist>
+            </div>
+            <label
+              >本地读取父目录
+              <div class="path-field">
+                <input id="source" data-task="source" /><button
+                  data-browse="source"
+                  aria-label="浏览本机输入目录"
+                >
+                  浏览
+                </button>
+              </div></label
+            >
+            <p class="hint">
+              选择场景目录（内含 A / B），或单独选择 A /
+              B。启动后持续读取完整且稳定的 episode 录制。
+            </p>
+            <details class="destination-preview" open>
+              <summary aria-label="本地读取目录预览">
+                完整目录<span class="preview-arrow" aria-hidden="true">▸</span>
+              </summary>
+              <div id="source-preview" class="preview-content"></div>
+            </details>
+            <div class="task-options">
+              <label class="checkbox"
+                ><input
+                  type="checkbox"
+                  data-task="include_existing"
+                />包含目录中已有的录制</label
+              ><label class="checkbox"
+                ><input
+                  type="checkbox"
+                  data-task="auto_upload_paths"
+                />生成默认上传路径</label
+              >
+            </div>
+            <div class="task-actions">
+              <button id="add-task" aria-label="添加任务">＋ 添加</button>
+              <button
+                id="enable-task"
+                role="switch"
+                aria-checked="false"
+                aria-label="启用当前任务"
+              >
+                启用<span class="switch-track" aria-hidden="true"></span>
+              </button>
+              <button id="remove-task" aria-label="移除任务">移除</button>
+            </div>
+          </div>
+        </article>
+        <article class="card destination-card">
+          <div class="card-head">
+            <div>
+              <span class="step">02</span>
+              <h2>202 · 完整数据</h2>
+            </div>
+            <span id="data-chip" class="connection-chip">连接中…</span>
+          </div>
+          <div class="destination-first">
+            <div class="destination-content">
+              <label
+                >原始 ROSbag 存储父目录
+                <div class="path-field">
+                  <input id="raw_root" data-task="raw_root" /><button
+                    data-browse="raw_root"
+                  >
+                    浏览
+                  </button>
+                </div></label
+              >
+              <p class="hint">
+                按 A / B 保存。备份与校验完成后，再按设置释放本机原包。
+              </p>
+              <details class="destination-preview" open>
+                <summary aria-label="原始 ROSbag目录预览">
+                  完整目录<span class="preview-arrow" aria-hidden="true"
+                    >▸</span
+                  >
+                </summary>
+                <div id="raw-preview" class="preview-content"></div>
+              </details>
+            </div>
+          </div>
+          <div class="destination-second">
+            <div class="destination-content">
+              <label
+                >完整 LeRobot 存储父目录
+                <div class="path-field">
+                  <input id="lerobot_root" data-task="lerobot_root" /><button
+                    data-browse="lerobot_root"
+                  >
+                    浏览
+                  </button>
+                </div></label
+              >
+              <p class="hint">本机清洗、转换并校验，累计 24 小时封存后上传。</p>
+              <details class="destination-preview" open>
+                <summary aria-label="完整 LeRobot目录预览">
+                  完整目录<span class="preview-arrow" aria-hidden="true"
+                    >▸</span
+                  >
+                </summary>
+                <div id="data-preview" class="preview-content"></div>
+              </details>
+              <label class="checkbox release-option"
+                ><input type="checkbox" data-task="delete_raw" />202
+                备份校验后释放本机原始 ROSbag</label
+              >
+            </div>
+          </div>
+          <details class="server-settings">
+            <summary>SSH 连接设置</summary>
+            <div class="three-fields">
+              <label
+                >地址<input data-server="data_server" data-key="host" /></label
+              ><label
+                >SSH 用户<input
+                  data-server="data_server"
+                  data-key="user" /></label
+              ><label
+                >端口<input
+                  type="number"
+                  data-server="data_server"
+                  data-key="port"
+              /></label>
+            </div>
+            <button data-check="data_server">测试连接</button
+            ><span id="data-result" class="connection-result"></span>
+          </details>
+        </article>
+        <article class="card destination-card">
+          <div class="card-head">
+            <div>
+              <span class="step">03</span>
+              <h2 class="training-title">
+                <select
+                  id="training-port-select"
+                  aria-label="训练服务器端口"
+                  data-server="training_server"
+                  data-key="port"
+                >
+                  <option value="26">26</option>
+                  <option value="28">28</option></select
+                ><span>· 训练数据</span>
+              </h2>
+            </div>
+            <span id="train-chip" class="connection-chip">连接中…</span>
+          </div>
+          <div class="destination-first">
+            <div class="destination-content">
+              <label
+                >normal 存储父目录
+                <div class="path-field">
+                  <input id="normal_root" data-task="normal_root" /><button
+                    data-browse="normal_root"
+                  >
+                    浏览
+                  </button>
+                </div></label
+              >
+              <p class="hint">
+                保留全部轨迹与帧，移除训练暂不使用的深度和触觉字段。
+              </p>
+              <details class="destination-preview" open>
+                <summary aria-label="normal目录预览">
+                  完整目录<span class="preview-arrow" aria-hidden="true"
+                    >▸</span
+                  >
+                </summary>
+                <div id="normal-preview" class="preview-content"></div>
+              </details>
+            </div>
+          </div>
+          <div class="destination-second">
+            <div class="destination-content">
+              <label
+                >speedup 存储父目录
+                <div class="path-field">
+                  <input id="speedup_root" data-task="speedup_root" /><button
+                    data-browse="speedup_root"
+                  >
+                    浏览
+                  </button>
+                </div></label
+              >
+              <p class="hint">
+                在本机做轨迹时间压缩，同步处理图像，保持原始帧率。
+              </p>
+              <details class="destination-preview" open>
+                <summary aria-label="speedup目录预览">
+                  完整目录<span class="preview-arrow" aria-hidden="true"
+                    >▸</span
+                  >
+                </summary>
+                <div id="train-preview" class="preview-content"></div>
+              </details>
+              <label
+                class="checkbox release-option"
+                title="默认关闭。等待202完整备份、normal/speedup两版上传及配对校验全部通过后，释放本机完整批次的数据与视频；保留元数据、凭据和两版成品。"
+                ><input
+                  type="checkbox"
+                  data-task="delete_lerobot"
+                />两版上传校验后释放本机完整 LeRobot</label
+              >
+            </div>
+          </div>
+          <details class="server-settings oss-transit" id="oss-transit">
+            <summary>
+              OSS 中转<span class="transit-badge">校验后自动清理</span>
+            </summary>
+            <p class="hint" id="training-delivery-hint"></p>
+            <div id="oss-transit-content" class="transit-paths"></div>
+          </details>
+          <details class="server-settings">
+            <summary>SSH 连接设置</summary>
+            <div class="three-fields">
+              <label
+                >地址<input
+                  data-server="training_server"
+                  data-key="host" /></label
+              ><label
+                >SSH 用户<input
+                  data-server="training_server"
+                  data-key="user" /></label
+              ><label
+                >端口<input
+                  type="number"
+                  data-server="training_server"
+                  data-key="port"
+              /></label>
+            </div>
+            <button data-check="training_server">测试连接</button
+            ><span id="training-result" class="connection-result"></span>
+          </details>
+        </article>
+        <section class="card workflow-controls" aria-label="工作流控制">
+          <div class="control-group save-controls">
+            <span id="dirty" class="dirty hidden">有未保存设置</span>
+            <button id="save">保存设置</button>
+          </div>
+          <span class="control-divider" aria-hidden="true"></span>
+          <div class="control-group current-task-controls">
+            <div class="actions">
+              <button id="stop-one" class="danger-outline">
+                <span class="control-symbol" aria-hidden="true">■</span>
+                停止当前任务
+              </button>
+              <button id="start-one" class="primary">
+                <span class="control-symbol" aria-hidden="true">▶</span>
+                开始当前任务
+              </button>
+            </div>
+          </div>
+          <span class="control-divider" aria-hidden="true"></span>
+          <div class="control-group all-task-controls">
+            <div class="actions">
+              <button id="stop" class="danger-outline">
+                <span class="control-symbol" aria-hidden="true">■</span>
+                停止全部任务
+              </button>
+              <button id="start" class="primary">
+                <span class="control-symbol" aria-hidden="true">▶</span>
+                开始全部任务
+              </button>
+            </div>
+          </div>
+        </section>
+      </section>
+      <section class="card progress-card">
+        <div class="progress-heading">
+          <div>
+            <h2 id="progress-title">任务进度</h2>
+          </div>
+          <div class="actions">
+            <span id="run-state" class="pill">尚未开始</span
+            ><button id="retry-one">重试失败项</button>
+          </div>
+        </div>
+        <div id="metrics" class="metrics"></div>
+        <div id="current-phase" class="current-phase"></div>
+        <div
+          id="workflow-error"
+          class="workflow-error hidden"
+          role="alert"
+        ></div>
+        <div id="transfer-grid" class="transfer-grid"></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  <button
+                    id="toggle-records"
+                    aria-expanded="true"
+                    aria-controls="records"
+                  >
+                    <span class="records-arrow" aria-hidden="true">▸</span
+                    ><span class="records-title">录制 / 批次</span>
+                  </button>
+                </th>
+                <th>分组</th>
+                <th>本机处理</th>
+                <th>上传状态</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody id="records"></tbody>
+          </table>
+        </div>
+        <div id="record-foot" class="record-foot">
+          <span id="batch-clock" class="hint"></span>
+          <button
+            id="clear-records"
+            type="button"
+            title="仅清空当前任务的记录表显示，保留工作流和日志文件"
+          >
+            清空
+          </button>
+        </div>
+        <details class="logs">
+          <summary>
+            <span class="logs-arrow" aria-hidden="true">▸</span
+            ><span class="logs-title">运行日志与详细记录</span
+            ><span class="log-refresh">自动刷新</span>
+          </summary>
+          <pre id="log-output">尚未开始</pre>
+          <div id="runtime-path" class="hint"></div>
+        </details>
+        <p class="hint" id="last-updated"></p>
+      </section>
+      <footer>
+        本机处理 · 24 小时滚动批次 · 全文件 SHA256 校验 · 断点续传
+        <span>所有测试和运行记录保存在工程 outputs/gui 下</span>
+      </footer>
+    </main>
+    <main id="view-annotation" class="annotation-view" hidden>
+      <section class="card annotation-settings">
+        <div class="card-head"><h2>自动数据标注</h2><span id="annotation-state" class="pill">尚未开始</span></div>
+        <p class="hint">转换校验后自动标注，24 小时封存后交付。仅 cam0 参与模型理解，cam1 / cam2 完整保留。步骤由模型理解全片后自然划分，不固定数量。</p>
+        <label class="checkbox"><input type="checkbox" data-task="annotation_enabled">为当前任务启用自动标注</label>
+        <label class="checkbox"><input type="checkbox" data-task="annotation_include_existing">包含当前转换目录中已有但未标注的数据</label>
+        <div class="three-fields">
+          <label>豆包模型 ID<input data-task="annotation_model" placeholder="模型 ID 或接入点 ID"></label>
+          <label>视频理解采样率（fps）<input data-task="annotation_fps" type="number" min="0.2" max="5" step="0.1"></label>
+          <label>单条结果重试上限<input data-task="annotation_retries" type="number" min="0" max="10" step="1"></label>
+        </div>
+        <p class="hint">采样率仅影响模型视频理解，不改动交付视频。暂时断网持续退避重试；结果不合格或已发送但结果未知受单条上限约束。权限、Key 或额度错误会暂停当前整个任务，修复后自动恢复。</p>
+        <div class="actions"><button id="annotation-save">保存设置</button><button id="annotation-start" class="primary">开始当前任务</button><button id="annotation-pause">暂停标注</button><button id="annotation-retry">立即重试待恢复项</button></div>
+        <p id="annotation-notice" role="status"></p>
+      </section>
+      <section class="card annotation-settings">
+        <h2>标注进度</h2><p id="annotation-progress" class="hint"></p>
+        <div class="table-scroll"><table><thead><tr><th>分组 / 录制</th><th>Episode</th><th>状态</th><th>请求次数</th><th>用量</th><th>详情</th></tr></thead><tbody id="annotation-jobs"></tbody></table></div>
+        <h3>正式数据批次</h3><div id="annotation-batches"></div>
+      </section>
+    </main>
+    <main id="view-preview" class="annotation-view" hidden>
+      <section class="card annotation-settings">
+        <div class="card-head"><h2>标注结果预览</h2><span class="tag">只读预览</span></div>
+        <div class="two-fields"><label>已完成的 Episode<select id="annotation-preview-job"></select></label><label>相机<select id="annotation-camera"></select></label></div>
+        <button id="annotation-load-preview">打开结果</button><p id="annotation-preview-info" class="hint">选择已标注的 Episode，可查看视频与每个时间段的文字。预览不会阻塞自动交付。</p>
+        <video id="annotation-video" controls preload="metadata"></video>
+        <h3>粗粒度阶段</h3><p id="annotation-coarse-info" class="hint"></p>
+        <div class="table-scroll"><table><thead><tr><th>阶段</th><th>时间（秒）</th><th>粗任务 / 对应细步骤</th></tr></thead><tbody id="annotation-coarse-steps"></tbody></table></div>
+        <h3>细粒度动作</h3>
+        <div class="table-scroll"><table><thead><tr><th>步骤</th><th>时间（秒）</th><th>细分任务</th></tr></thead><tbody id="annotation-steps"></tbody></table></div>
+      </section>
+    </main>
+    <main id="view-resources" class="annotation-view" hidden>
+      <section class="card annotation-settings"><h2>豆包连接</h2>
+        <p id="annotation-key-state" class="hint"></p>
+        <label>API Key<input id="annotation-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="配置一次，后台自动读取"></label>
+        <div class="actions"><button id="annotation-save-key">保存本机凭据</button><button id="annotation-check-key">检查服务连接</button></div>
+        <p class="hint">保存在专用本机凭据文件中，界面仅显示掩码。更换 Key 不需要停止其他任务。连接检查不能证明指定模型具有可用额度。</p><p id="annotation-connection-result" role="status"></p>
+      </section>
+      <section class="card annotation-settings"><h2>工作站与交付连接</h2><p id="annotation-resources"></p><button id="annotation-connections">返回工作流配置上传路径 / SSH</button><p class="hint">磁盘不足时停止新转换和标注，已就绪上传继续。远端复用原有中转、校验和发布机制，内容不同的同名目标不会覆盖。</p></section>
+    </main>
+    <dialog id="browser-dialog">
+      <div class="dialog-head">
+        <div>
+          <p class="eyebrow" id="browser-host">LOCAL FILES</p>
+          <h2>选择目录</h2>
+        </div>
+        <button
+          id="close-browser"
+          class="icon-button"
+          aria-label="关闭目录浏览"
+        >
+          ×
+        </button>
+      </div>
+      <div class="browser-navigation">
+        <button id="browser-up" aria-label="上一级">↑</button
+        ><input id="browser-path" aria-label="目录路径" /><button
+          id="browser-go"
+        >
+          跳转
+        </button>
+      </div>
+      <div id="browser-error" class="browser-error"></div>
+      <div id="browser-entries" class="browser-entries"></div>
+      <div id="mkdir-area">
+        <input id="folder-name" placeholder="新场景目录名称" /><label
+          class="checkbox"
+          ><input id="with-ab" type="checkbox" checked />自动创建 A / B</label
+        ><button id="mkdir">新建场景</button>
+      </div>
+      <div class="dialog-footer">
+        <span class="hint">可浏览其他项目；仅在点击“新建场景”时创建目录。</span
+        ><button id="choose-folder" class="primary">选择当前目录</button>
+      </div>
+    </dialog>
+    <div id="toast" role="status"></div>
+    <script src="/annotation.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+schema_version: 1
+# Server-native path confirmed from the workstation SSHFS mount source.
+# Do NOT use the workstation's SSHFS mount path on the server.
+data_root: /data/data-fruits/real/harvest-tomato/data
+state_root: outputs/ingest-server-batches/state
+work_root: outputs/ingest-server-batches/work
+poll_seconds: 10
+stable_scans: 3
+stable_seconds: 60
+max_jobs_per_scan: 1
+max_checks_per_scan: 4
+# Read source bags directly without making a raw copy. Sources remain read-only;
+# cleaned bags are written separately. Full source/output verification remains.
+copy_input: false
+max_attempts: 3
+retry_seconds: 60
+batch_hours: 72
+# Process existing bags AND future arrivals. Review once before first start.
+initial_history: {mode: all}
+routes:
+  - {robot: sharpa, group: A}
+  - {robot: sharpa, group: B}
+  - {robot: wuji, group: A}
+  - {robot: wuji, group: B}

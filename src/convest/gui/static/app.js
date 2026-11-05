@@ -1,0 +1,1004 @@
+"use strict";
+const $ = (id) => document.getElementById(id),
+  clone = (x) => JSON.parse(JSON.stringify(x));
+const esc = (x) =>
+  String(x ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+let token = "",
+  draft = null,
+  snapshot = null,
+  selected = null,
+  dirty = false,
+  polling = false,
+  browser = null,
+  toastTimer;
+// Display-only masks: polling and task switches must not restore cleared rows.
+const clearedRecords = new Map();
+const recordKey = (kind, row) =>
+  JSON.stringify([
+    kind,
+    row.route || "",
+    row.id ?? row.batch_id ?? row.episode ?? row.name,
+  ]);
+function clearRecordDisplay() {
+  const s = state();
+  const hidden = clearedRecords.get(selected) || new Set();
+  for (const [kind, rows] of [
+    ["job", s.jobs],
+    ["batch", s.batches],
+    ["training", s.training],
+  ]) {
+    for (const row of rows || []) hidden.add(recordKey(kind, row));
+  }
+  clearedRecords.set(selected, hidden);
+  renderProgress();
+}
+const names = {
+  stopped: "已停止",
+  starting: "正在启动",
+  running: "运行中",
+  stopping: "停止中 · 等待当前作业收尾",
+  error: "需要处理",
+  pending: "排队中",
+  retry: "等待重试",
+  upload_retry: "上传待重试",
+  processing: "处理中",
+  converted: "本机完成",
+  completed: "校验完成",
+  uploaded: "已发布",
+  local_ready: "本机就绪",
+  excluded: "质量检查未通过",
+  failed: "处理失败",
+  conflict: "文件冲突",
+  waiting_stable: "等待录制稳定",
+  waiting_space: "等待磁盘空间",
+  active: "累计中",
+  sealed: "已封存",
+  uploading: "上传中",
+  waiting_batch: "等待新批次",
+  waiting_seal: "等待 24h 封存",
+  blocked: "受阻",
+  transferring: "传输中",
+  oss_prepare: "准备 OSS 中转",
+  oss_upload: "上传至 OSS 中转",
+  oss_check: "校验中转文件",
+  oss_copy: "搬运至训练目录",
+  oss_verify: "校验最终数据并保存凭据",
+  oss_cleanup: "清理中转",
+  oss_publish: "搬运至训练目录、校验并清理中转",
+  remote_prepare: "准备远端目录",
+  remote_sha256: "远端 SHA256 校验",
+  deleting_verified_original: "释放已备份原包",
+  normal: "生成 normal",
+  speedup: "生成 speedup",
+  checking_source: "核验批次来源",
+  final_verification: "成品完整校验",
+  local_ready: "成品已就绪",
+  original_final_hash: "原包完整校验",
+  queued_for_upload: "已加入上传队列",
+  upload_manifest: "生成上传清单",
+};
+const label = (x) => names[x] || x || "等待开始";
+function bytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return n + " B";
+  let i = Math.min(3, Math.floor(Math.log(n) / Math.log(1024)));
+  return (
+    (n / 1024 ** i).toFixed(i > 1 ? 2 : 0) + " " + ["B", "KiB", "MiB", "GiB"][i]
+  );
+}
+function duration(n) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  n = Math.max(0, Math.round(n));
+  if (n < 60) return n + " 秒";
+  if (n < 3600) return Math.ceil(n / 60) + " 分钟";
+  return (
+    Math.floor(n / 3600) + " 小时 " + Math.floor((n % 3600) / 60) + " 分钟"
+  );
+}
+function toast(text, error = false) {
+  $("toast").textContent = text;
+  $("toast").className = "visible" + (error ? " error" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ($("toast").className = ""), 6500);
+}
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers:
+      body === undefined
+        ? {}
+        : { "Content-Type": "application/json", "X-Workflow-Token": token },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const v = await r.json();
+  if (!r.ok) throw Error(v.error || "请求未完成");
+  return v;
+}
+function current() {
+  return draft?.tasks.find((t) => t.id === selected);
+}
+function state() {
+  return (
+    snapshot?.tasks.find((t) => t.id === selected) || {
+      state: "stopped",
+      jobs: [],
+      uploads: [],
+      batches: [],
+      training: [],
+    }
+  );
+}
+function mark() {
+  dirty = true;
+  $("dirty").classList.remove("hidden");
+  renderPreviews();
+}
+const uploadFields = [
+  "raw_root",
+  "lerobot_root",
+  "normal_root",
+  "speedup_root",
+];
+function generateUploadPaths(t) {
+  const base = "/data/data-demo/real/" + t.project.trim() + "/data/";
+  const suffix = t.robot + "/" + t.scene.trim();
+  const train =
+    "/mnt/data/train_platform/datasets/" +
+    t.project.trim() +
+    "_" +
+    t.robot +
+    "/";
+  t.raw_root = base + "rosbag/" + suffix;
+  t.lerobot_root = base + "lerobot/" + suffix;
+  t.normal_root = train + "normal/" + t.scene.trim();
+  t.speedup_root = train + "speedup/" + t.scene.trim();
+}
+function renderUploadPaths() {
+  const t = current();
+  uploadFields.forEach((field) => {
+    $(field).value = t?.[field] || "";
+    $(field).disabled = !t || t.auto_upload_paths;
+    $(field).title = t?.auto_upload_paths
+      ? "由项目、手型和场景自动生成；取消生成默认上传路径后可手动选择"
+      : "手动选择上传父目录，上传时追加 A / B 和包名";
+    const browseButton = document.querySelector(
+      '[data-browse="' + field + '"]',
+    );
+    browseButton.disabled = !t;
+    browseButton.title = t?.auto_upload_paths
+      ? "可浏览服务器；选择目录后切换为手动路径"
+      : "选择服务器上的场景父目录（内含 A / B）";
+  });
+  renderPreviews();
+}
+function renderEditor() {
+  const t = current();
+  document.querySelectorAll("[data-task]").forEach((el) => {
+    el.disabled = !t;
+    if (!t) {
+      if (el.type !== "checkbox") el.value = "";
+      return;
+    }
+    if (el.type === "checkbox") el.checked = t[el.dataset.task];
+    else el.value = t[el.dataset.task];
+  });
+  $("enable-task").disabled = !t;
+  $("enable-task").setAttribute("aria-checked", String(Boolean(t?.enabled)));
+  $("remove-task").disabled = !t;
+  renderUploadPaths();
+}
+function renderTransitPreview() {
+  const t = current();
+  const delivery = draft.training_delivery || {
+    mode: "oss",
+    transit_root: "/mnt/public_data/local-realrobot-train-data",
+    final_root: "/mnt/data/train_platform/datasets",
+  };
+  const direct = delivery.mode === "direct";
+  $("training-delivery-hint").textContent = direct
+    ? "当前使用直传，未启用 OSS 中转。"
+    : "只读说明：上传中转 → 搬运到训练目录 → 最终校验 → 自动清理。完成后中转目录内看不到该批文件是正常的。";
+  if (direct) {
+    $("oss-transit-content").textContent =
+      "最终位置仍以下方上传状态及存储父目录为准。";
+    return;
+  }
+  const root = delivery.transit_root.replace(/\/+$/, "");
+  const finalRoot = delivery.final_root.replace(/\/+$/, "");
+  let html = "<strong>中转根目录</strong><code>" + esc(root) + "</code>";
+  for (const variant of ["normal", "speedup"]) {
+    const final = (t?.[variant + "_root"] || "").replace(/\/+$/, "");
+    const mapped = final.startsWith(finalRoot + "/")
+      ? root +
+        final.slice(finalRoot.length) +
+        "/{A,B}/MMDD_起号_止号_" +
+        variant +
+        "_lerobot/"
+      : "最终目录不在训练根目录下，无法映射中转路径";
+    html +=
+      "<strong>" +
+      variant +
+      " · 当前任务中转路径</strong><code>" +
+      esc(mapped) +
+      "</code>";
+  }
+  $("oss-transit-content").innerHTML =
+    html +
+    '<p class="hint">日期、编号按实际批次生成。最终副本和完成凭据保留，仅自动删除该批中转文件。</p>';
+}
+function renderPreviews() {
+  renderTransitPreview();
+  const t = current();
+  const previews = [
+    ["raw-preview", "raw_root", "episode…"],
+    ["data-preview", "lerobot_root", "MMDD_起号_止号_data_lerobot"],
+    ["normal-preview", "normal_root", "MMDD_起号_止号_normal_lerobot"],
+    ["train-preview", "speedup_root", "MMDD_起号_止号_speedup_lerobot"],
+  ];
+  previews.forEach(([id, field, child]) => {
+    $(id).innerHTML = t
+      ? "<strong>" +
+        esc(t[field] || "请选择存储目录") +
+        "</strong><br>├ A / " +
+        child +
+        "<br>└ B / " +
+        child
+      : "添加任务后配置存储路径";
+  });
+  const source = (t?.source || "").replace(/\/+$/, "");
+  const group = source.split("/").pop();
+  $("source-preview").innerHTML = t
+    ? "<strong>" +
+      esc(source || "请选择本地读取目录") +
+      "</strong><br>" +
+      (["A", "B"].includes(group)
+        ? "└ episode…"
+        : "├ A / episode…<br>└ B / episode…")
+    : "添加任务后配置读取路径";
+}
+function renderTasks() {
+  if (!draft) return;
+  $("task-list").innerHTML = draft.tasks
+    .map((t) => {
+      const s = snapshot?.tasks.find((s) => s.id === t.id) || {
+        state: "stopped",
+      };
+      return (
+        '<div class="task-item ' +
+        (selected === t.id ? "selected" : "") +
+        '" data-select="' +
+        t.id +
+        '" role="button" tabindex="0"><span class="radio"></span><div><div class="task-name">' +
+        esc(t.name) +
+        '</div><div class="task-sub">' +
+        esc(t.project) +
+        " / " +
+        esc(t.robot) +
+        " / " +
+        esc(t.scene) +
+        '</div></div><span class="task-status ' +
+        esc(s.state) +
+        '">' +
+        esc(t.enabled ? label(s.state) : "未启用") +
+        "</span></div>"
+      );
+    })
+    .join("");
+  document.querySelectorAll("[data-select]").forEach((el) => {
+    const select = () => {
+      selected = el.dataset.select;
+      renderEditor();
+      renderTasks();
+      renderProgress();
+      refreshLogs();
+    };
+    el.onclick = select;
+    el.onkeydown = (e) => {
+      if (e.key === "Enter") select();
+    };
+  });
+}
+function transitStages(p) {
+  if (
+    !p.transit &&
+    !String(p.phase || "").startsWith("oss_") &&
+    !String(p.failed_phase || "").startsWith("oss_")
+  )
+    return "";
+  const phase = p.phase === "retry" ? p.failed_phase : p.phase;
+  const keys = [
+    "oss_upload",
+    "oss_copy",
+    "oss_verify",
+    "oss_cleanup",
+    "completed",
+  ];
+  const labels = ["上传中转", "搬运", "校验", "清理", "完成"];
+  const index = keys.indexOf(
+    phase === "oss_prepare"
+      ? "oss_upload"
+      : phase === "oss_check" || phase === "oss_publish"
+        ? "oss_copy"
+        : phase,
+  );
+  return (
+    '<div class="transit-stages" aria-label="OSS 中转阶段">' +
+    keys
+      .map(
+        (key, i) =>
+          '<span class="' +
+          (i === index
+            ? p.phase === "retry"
+              ? "stage-error"
+              : "stage-current"
+            : i < index
+              ? "stage-done"
+              : "") +
+          '">' +
+          labels[i] +
+          "</span>",
+      )
+      .join('<span aria-hidden="true">→</span>') +
+    "</div>"
+  );
+}
+function transferCard(title, p, violet = false, count = "") {
+  p = p || {};
+  const total = p.bytes_total || 0,
+    done = p.bytes_done || 0;
+  const percent = total ? Math.min(100, (done / total) * 100) : 0;
+  return (
+    '<div><div class="transfer-title">' +
+    title +
+    "<span>" +
+    esc(p.phase ? label(p.phase) : "等待任务") +
+    '</span></div><div class="track"><div class="fill ' +
+    (violet ? "violet" : "") +
+    '" style="width:' +
+    percent +
+    '%"></div></div><div class="transfer-detail"><span>' +
+    esc(total ? bytes(done) + " / " + bytes(total) : count || "暂无上传") +
+    "</span><span>" +
+    esc(p.eta_seconds != null ? "剩余 " + duration(p.eta_seconds) : "") +
+    "</span></div>" +
+    (p.speed_bps && ["transferring", "oss_upload"].includes(p.phase)
+      ? '<div class="hint">' + bytes(p.speed_bps) + "/s · 当前包</div>"
+      : "") +
+    transitStages(p) +
+    (p.artifact === "pair-report"
+      ? '<div class="hint">' +
+        (p.phase === "completed"
+          ? "双版本配对凭据已交付"
+          : "双版本配对凭据交付") +
+        "</div>"
+      : "") +
+    (p.transit
+      ? '<details class="transfer-location"><summary>本次中转位置</summary><code>' +
+        esc(p.transit) +
+        "</code></details>"
+      : "") +
+    (p.phase === "completed" && p.transit_cleaned
+      ? '<div class="hint">最终数据已校验 · 中转已清理</div>'
+      : "") +
+    (p.error
+      ? '<p class="hint error">' +
+        esc(p.failed_phase ? label(p.failed_phase) + "失败，等待重试：" : "") +
+        esc(p.error) +
+        "</p>"
+      : "") +
+    "</div>"
+  );
+}
+function renderProgress() {
+  window.annotationUI?.render();
+  const t = current(),
+    s = state(),
+    jobs = s.jobs || [],
+    uploads = s.uploads || [],
+    training = s.training || [],
+    batches = s.batches || [];
+  $("progress-title").textContent = t ? t.name + " · 任务进度" : "任务进度";
+  $("run-state").textContent = label(s.state);
+  $("run-state").className =
+    "pill " +
+    (s.state === "stopped"
+      ? "stopped"
+      : s.state === "error"
+        ? "error"
+        : s.state === "stopping"
+          ? "stopping"
+          : "");
+  const pending = jobs.filter(
+      (j) => !["converted", "excluded"].includes(j.state),
+    ).length,
+    done = jobs.filter((j) => j.state === "converted").length,
+    backed = uploads.filter((u) => u.raw_done).length,
+    trained = training.filter((j) => j.state === "uploaded").length;
+  $("metrics").innerHTML = [
+    ["待处理录制", pending],
+    ["本机已完成", done],
+    ["202 已备份原包", backed],
+    ["训练已发布批次", trained],
+  ]
+    .map(
+      ([k, v]) =>
+        '<div class="metric"><div class="label">' +
+        k +
+        '</div><div class="value">' +
+        v +
+        "</div></div>",
+    )
+    .join("");
+  const processing = s.processing || {},
+    tp = s.training_processing || {},
+    videos = s.videos || {};
+  let phase =
+    s.state === "stopped"
+      ? s.root
+        ? "已停止。队列与成品已保留，点击开始可继续。"
+        : "尚未开始。保存设置，然后点击开始工作流。"
+      : s.state === "stopping"
+        ? "已停止接收新作业，正在等待当前清洗、转换或上传安全收尾。"
+        : "正在监听录制目录，完整且稳定的录制会自动进入队列。";
+  if (s.state === "running" && processing.phase)
+    phase =
+      (processing.episode ? processing.episode + " · " : "") +
+      label(processing.phase);
+  if (
+    s.state === "running" &&
+    tp.phase &&
+    !["local_ready", "uploaded"].includes(tp.phase)
+  )
+    phase +=
+      "　 /　" +
+      label(tp.phase) +
+      (videos.task === tp.task && tp.phase === "speedup"
+        ? " · 视频 " + videos.done + "/" + videos.total
+        : "");
+  if (
+    s.state === "running" &&
+    jobs.length &&
+    jobs.every((j) => ["converted", "excluded"].includes(j.state)) &&
+    uploads.every((u) => u.state === "completed")
+  ) {
+    if (batches.some((b) => b.state === "active"))
+      phase = "原包已完成备份，等待 24h 批次封存；继续监听新录制。";
+    else if (training.length && training.every((j) => j.state === "uploaded"))
+      phase = "已发现的录制与两版成品均已校验上传，继续监听新录制。";
+  }
+  if (s.error) phase = s.error;
+  $("current-phase").textContent = phase;
+  $("transfer-grid").innerHTML =
+    transferCard(
+      "原始 ROSbag → 202",
+      s.raw_upload,
+      false,
+      backed + " 包备份完成",
+    ) +
+    transferCard(
+      "24h LeRobot → 202",
+      s.batch_upload,
+      false,
+      uploads.filter((u) => u.dataset_done).length + " 批完成",
+    ) +
+    transferCard(
+      "normal → 训练服务器",
+      s.normal_upload,
+      true,
+      trained + " 批完成",
+    ) +
+    transferCard(
+      "speedup → 训练服务器",
+      s.speedup_upload,
+      true,
+      trained + " 批完成",
+    );
+  const errors = [
+    s.error,
+    s.training_processing?.error,
+    s.training_upload?.error,
+    ...jobs.map((j) => j.error),
+    ...uploads.map((j) => j.error),
+    ...training.map((j) => j.error),
+    ...Object.values(s.capture_status?.route_errors || {}),
+    ...Object.values(s.discovery?.routes || {}).map((r) => r.error),
+  ].filter(Boolean);
+  $("workflow-error").classList.toggle("hidden", !errors.length);
+  $("workflow-error").textContent = [...new Set(errors)].slice(0, 5).join("\n");
+  const uploadMap = new Map(uploads.map((u) => [u.route + "/" + u.episode, u]));
+  const hiddenRecords = clearedRecords.get(selected);
+  const visibleRecord = (kind) => (row) =>
+    !hiddenRecords?.has(recordKey(kind, row));
+  let html = jobs
+    .filter(visibleRecord("job"))
+    .slice(-150)
+    .map((j) => {
+      const u = uploadMap.get(j.route + "/" + j.episode);
+      return (
+        "<tr><td>" +
+        esc(j.episode) +
+        "</td><td>" +
+        esc(j.route) +
+        "</td><td>" +
+        esc(label(j.state)) +
+        "</td><td>" +
+        esc(u ? label(u.state) : "—") +
+        '</td><td class="' +
+        (j.error || u?.error ? "error" : "") +
+        '">' +
+        esc(j.error || u?.error || "—") +
+        "</td></tr>"
+      );
+    })
+    .join("");
+  html += batches
+    .filter(visibleRecord("batch"))
+    .map(
+      (b) =>
+        "<tr><td>24h · " +
+        esc(b.name || b.batch_id) +
+        "</td><td>" +
+        esc(b.route) +
+        "</td><td>" +
+        esc(label(b.state)) +
+        "</td><td>" +
+        esc(b.state === "uploaded" ? "完整校验通过" : "等待封存 / 上传") +
+        "</td><td>" +
+        esc(b.frames || 0) +
+        " 帧 · " +
+        esc(JSON.parse(b.sources || "[]").length) +
+        " 条轨迹</td></tr>",
+    )
+    .join("");
+  html += training
+    .filter(visibleRecord("training"))
+    .map(
+      (j) =>
+        "<tr><td>训练 · " +
+        esc(j.name || j.id.slice(0, 12)) +
+        "</td><td>" +
+        esc(j.route || "—") +
+        "</td><td>" +
+        esc(
+          ["local_ready", "uploading", "uploaded", "upload_retry"].includes(
+            j.state,
+          )
+            ? "两版已就绪"
+            : label(j.state),
+        ) +
+        "</td><td>训练端 · " +
+        esc(label(j.state)) +
+        '</td><td class="' +
+        (j.error ? "error" : "") +
+        '">' +
+        esc(j.error || j.batch_id || "—") +
+        "</td></tr>",
+    )
+    .join("");
+  $("records").innerHTML =
+    html ||
+    (hiddenRecords
+      ? '<tr><td class="empty" colspan="5">显示已清空，等待新录制 / 批次。</td></tr>'
+      : '<tr><td class="empty" colspan="5">还没有录制进入队列。可以先选择测试输入目录，再开始工作流。</td></tr>');
+  $("record-foot").hidden =
+    $("toggle-records").getAttribute("aria-expanded") !== "true";
+  $("clear-records").disabled = !t;
+  const deadlines = batches
+    .filter((b) => b.state === "active" && b.deadline_ns)
+    .map((b) => b.deadline_ns / 1e9 - Date.now() / 1000);
+  $("batch-clock").textContent = deadlines.length
+    ? "下一批封存剩余 " + duration(Math.min(...deadlines))
+    : "24 小时滚动封存，封存后自动衔接两版处理";
+  $("runtime-path").textContent = s.root
+    ? "运行记录：" +
+      s.root +
+      (s.versions?.length > 1
+        ? " · 保留 " + s.versions.length + " 个配置版本"
+        : "")
+    : "";
+  $("last-updated").textContent = snapshot
+    ? "最近更新 " +
+      new Date(snapshot.updated_ns / 1e6).toLocaleTimeString("zh-CN")
+    : "";
+  $("retry-one").disabled =
+    !t || ["running", "starting", "stopping"].includes(s.state);
+  $("start-one").disabled =
+    !t || !t.enabled || ["running", "starting", "stopping"].includes(s.state);
+  $("stop-one").disabled =
+    !t || !["running", "starting", "stopping"].includes(s.state);
+  $("stop").disabled = !snapshot?.tasks.some((t) =>
+    ["running", "starting", "stopping"].includes(t.state),
+  );
+}
+async function refresh() {
+  if (polling) return;
+  polling = true;
+  try {
+    snapshot = await api("/api/status");
+    $("server-state").textContent = "本机已连接";
+    $("server-state").className = "pill";
+    $("disk").textContent = "可用空间 " + bytes(snapshot.disk.free);
+    renderTasks();
+    renderProgress();
+    if (document.querySelector(".logs").open) await refreshLogs();
+  } catch (e) {
+    $("server-state").textContent = "本机服务未连接";
+    $("server-state").className = "pill error";
+  } finally {
+    polling = false;
+  }
+}
+async function refreshLogs() {
+  if (!selected) return;
+  try {
+    $("log-output").textContent = (
+      await api("/api/logs?task=" + encodeURIComponent(selected))
+    ).text;
+  } catch (e) {
+    $("log-output").textContent = e.message;
+  }
+}
+async function action(path, id) {
+  if (path === "start" && dirty) {
+    toast("请先保存设置，再开始工作流。", true);
+    return;
+  }
+  try {
+    snapshot = await api("/api/" + path, id ? { task: id } : {});
+    renderTasks();
+    renderProgress();
+    toast(
+      path === "start"
+        ? "已启动工作流，正在检查录制目录。"
+        : "已请求停止，新作业将暂停，当前作业会安全收尾。",
+    );
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+const checkVersions = new Map();
+function syncTrainingPort() {
+  const port = String(draft.training_server.port);
+  const select = $("training-port-select");
+  const custom = select.querySelector("option[data-custom-port]");
+  if (custom) custom.remove();
+  if (!["26", "28"].includes(port)) {
+    const option = document.createElement("option");
+    option.value = option.textContent = port;
+    option.dataset.customPort = "true";
+    select.append(option);
+  }
+  document
+    .querySelectorAll('[data-server="training_server"][data-key="port"]')
+    .forEach((el) => {
+      el.value = port;
+    });
+}
+async function check(server) {
+  const prefix = server === "data_server" ? "data" : "training",
+    chip = server === "data_server" ? "data-chip" : "train-chip";
+  const target = clone(draft[server]);
+  const serial = (checkVersions.get(server) || 0) + 1;
+  checkVersions.set(server, serial);
+  const currentCheck = () =>
+    checkVersions.get(server) === serial &&
+    JSON.stringify(draft[server]) === JSON.stringify(target);
+  $(prefix + "-result").textContent = "连接中…";
+  $(chip).textContent = "连接中…";
+  $(chip).className = "connection-chip";
+  try {
+    const v = await api("/api/check", { server: target });
+    if (!currentCheck()) return;
+    $(prefix + "-result").textContent = v.rsync
+      ? "SSH / rsync 已就绪"
+      : "SSH 已连接，但远端缺少 rsync";
+    $(chip).className = "connection-chip " + (v.rsync ? "ok" : "bad");
+    $(chip).textContent = v.rsync ? "已连接" : "缺少 rsync";
+    $(chip).title = $(prefix + "-result").textContent;
+  } catch (e) {
+    if (!currentCheck()) return;
+    $(prefix + "-result").textContent = e.message;
+    $(chip).className = "connection-chip bad";
+    $(chip).textContent = "未连接";
+    $(chip).title = e.message;
+  }
+}
+function inferSourceScene(task) {
+  const parts = task.source.replace(/\/+$/, "").split("/");
+  if (["A", "B"].includes(parts.at(-1))) parts.pop();
+  const scene = parts.at(-1);
+  if (
+    [
+      "full-block-more",
+      "full-block-one",
+      "no-block-more",
+      "no-block-one",
+    ].includes(scene)
+  ) {
+    task.scene = scene;
+    if (task.auto_upload_paths) generateUploadPaths(task);
+    return true;
+  }
+  return false;
+}
+async function browse(field) {
+  const t = current();
+  if (!t) return;
+  const server =
+    field === "source"
+      ? null
+      : field === "raw_root" || field === "lerobot_root"
+        ? draft.data_server
+        : draft.training_server;
+  browser = { field, server, path: t[field], parent: "/" };
+  $("browser-dialog").showModal();
+  $("browser-host").textContent = server
+    ? server.user + "@" + server.host + ":" + server.port
+    : "本机目录";
+  $("mkdir-area").classList.toggle("hidden", !server);
+  $("folder-name").value = "";
+  await browseTo(browser.path);
+}
+async function browseTo(path) {
+  if (!browser) return;
+  const active = browser;
+  const requestId = (active.request = (active.request || 0) + 1);
+  $("browser-path").value = path;
+  $("browser-error").textContent = "";
+  $("browser-entries").innerHTML = '<div class="empty">正在读取目录…</div>';
+  $("choose-folder").disabled = true;
+  try {
+    const v = await api("/api/browse", { server: browser.server, path });
+    if (browser !== active || active.request !== requestId) return;
+    browser.path = v.path;
+    browser.parent = v.parent;
+    $("browser-path").value = v.path;
+    $("browser-entries").innerHTML =
+      v.entries
+        .map(
+          (e, i) =>
+            '<div class="directory" data-directory="' +
+            i +
+            '" role="button" tabindex="0"><span class="folder-icon">▰</span>' +
+            esc(e.name) +
+            (e.symlink ? '<span class="symlink">链接</span>' : "") +
+            '<span class="directory-arrow">›</span></div>',
+        )
+        .join("") || '<div class="empty">这个目录是空的</div>';
+    document.querySelectorAll("[data-directory]").forEach((el) => {
+      el.onclick = () => browseTo(v.entries[Number(el.dataset.directory)].path);
+      el.onkeydown = (e) => {
+        if (e.key === "Enter") el.click();
+      };
+    });
+    $("choose-folder").disabled = false;
+  } catch (e) {
+    if (browser !== active || active.request !== requestId) return;
+    $("browser-path").value = path;
+    $("browser-error").textContent = e.message;
+    $("browser-entries").innerHTML =
+      '<div class="empty">请修改上方路径，或返回上一级目录</div>';
+  }
+}
+function alignDestinationRows() {
+  const first = [...document.querySelectorAll(".destination-first")];
+  const second = [...document.querySelectorAll(".destination-second")];
+  const sameExpansion = (sections) =>
+    sections.length === 2 &&
+    sections[0].querySelector(".destination-preview").open ===
+      sections[1].querySelector(".destination-preview").open;
+  const wide = window.matchMedia("(min-width: 781px)").matches;
+  const sync = (sections, enabled) => {
+    const height = enabled
+      ? Math.max(
+          ...sections.map(
+            (section) =>
+              section.firstElementChild.getBoundingClientRect().height,
+          ),
+        )
+      : 0;
+    sections.forEach((section) => {
+      section.style.minHeight = height ? height + "px" : "";
+    });
+  };
+  sync(first, wide && sameExpansion(first));
+  sync(second, wide && sameExpansion(first) && sameExpansion(second));
+}
+function setupDestinationLayout() {
+  const observer = new ResizeObserver(alignDestinationRows);
+  document
+    .querySelectorAll(".destination-content")
+    .forEach((el) => observer.observe(el));
+  document
+    .querySelectorAll(".destination-preview")
+    .forEach((el) => el.addEventListener("toggle", alignDestinationRows));
+  window.addEventListener("resize", alignDestinationRows);
+  alignDestinationRows();
+}
+async function init() {
+  try {
+    const b = await api("/api/bootstrap");
+    token = b.token;
+    snapshot = b.snapshot;
+    draft = clone(snapshot.settings);
+    selected = draft.tasks[0]?.id;
+    syncTrainingPort();
+    document.querySelectorAll("[data-server]").forEach((el) => {
+      el.value = draft[el.dataset.server][el.dataset.key];
+      el.oninput = () => {
+        draft[el.dataset.server][el.dataset.key] =
+          el.dataset.key === "port" ? Number(el.value) : el.value;
+        checkVersions.set(
+          el.dataset.server,
+          (checkVersions.get(el.dataset.server) || 0) + 1,
+        );
+        if (el.dataset.server === "training_server") syncTrainingPort();
+        const chip =
+          el.dataset.server === "data_server" ? "data-chip" : "train-chip";
+        $(chip).className = "connection-chip";
+        $(chip).textContent = "待测试";
+        $(chip).title = "连接设置已修改，请重新测试";
+        mark();
+        if (el.id === "training-port-select") check("training_server");
+      };
+    });
+    document.querySelectorAll("[data-task]").forEach(
+      (el) =>
+        (el.oninput = () => {
+          if (!current()) return;
+          current()[el.dataset.task] =
+            el.type === "checkbox" ? el.checked : el.value;
+          if (
+            current().auto_upload_paths &&
+            ["project", "robot", "scene", "auto_upload_paths"].includes(
+              el.dataset.task,
+            )
+          ) {
+            generateUploadPaths(current());
+          }
+          renderUploadPaths();
+          mark();
+          renderTasks();
+        }),
+    );
+    document
+      .querySelectorAll("[data-browse]")
+      .forEach((el) => (el.onclick = () => browse(el.dataset.browse)));
+    document
+      .querySelectorAll("[data-check]")
+      .forEach((el) => (el.onclick = () => check(el.dataset.check)));
+    $("save").onclick = async () => {
+      try {
+        const v = await api("/api/save", draft);
+        draft = clone(v.settings);
+        syncTrainingPort();
+        renderEditor();
+        dirty = false;
+        $("dirty").classList.add("hidden");
+        toast("设置已保存。路径或服务器变化会使用独立队列，历史结果会保留。");
+        await refresh();
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+    $("clear-records").onclick = clearRecordDisplay;
+    $("toggle-records").onclick = () => {
+      const expanded =
+        $("toggle-records").getAttribute("aria-expanded") !== "true";
+      $("toggle-records").setAttribute("aria-expanded", String(expanded));
+      $("records").hidden = !expanded;
+      $("record-foot").hidden = !expanded;
+      document
+        .querySelector(".table-scroll")
+        .classList.toggle("collapsed", !expanded);
+    };
+    $("retry-one").onclick = async () => {
+      try {
+        snapshot = await api("/api/retry", { task: selected });
+        renderProgress();
+        toast(
+          "失败项已准备重试。质量排除和文件冲突保持原状，点击开始即可继续。",
+        );
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+    $("start").onclick = () => action("start");
+    $("stop").onclick = () => action("stop");
+    $("start-one").onclick = () => action("start", selected);
+    $("stop-one").onclick = () => action("stop", selected);
+    $("add-task").onclick = async () => {
+      try {
+        const t = await api("/api/new-task", { index: draft.tasks.length + 1 });
+        draft.tasks.push(t);
+        selected = t.id;
+        mark();
+        renderEditor();
+        renderTasks();
+        renderProgress();
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+    $("enable-task").onclick = () => {
+      const t = current();
+      if (!t) return;
+      t.enabled = !t.enabled;
+      mark();
+      renderEditor();
+      renderTasks();
+      renderProgress();
+    };
+    $("remove-task").onclick = () => {
+      if (["running", "starting", "stopping"].includes(state().state)) {
+        toast("请先停止当前任务。", true);
+        return;
+      }
+      draft.tasks = draft.tasks.filter((t) => t.id !== selected);
+      selected = draft.tasks[0]?.id;
+      mark();
+      renderEditor();
+      renderTasks();
+      renderProgress();
+    };
+    $("close-browser").onclick = () => $("browser-dialog").close();
+    $("browser-go").onclick = () => browseTo($("browser-path").value);
+    $("browser-path").onkeydown = (e) => {
+      if (e.key === "Enter") browseTo(e.target.value);
+    };
+    $("browser-up").onclick = () => browseTo(browser.parent);
+    $("choose-folder").onclick = () => {
+      const task = current();
+      task[browser.field] = browser.path;
+      if (browser.field === "source") {
+        if (inferSourceScene(task))
+          toast("已根据本地目录选定场景：" + task.scene);
+      } else if (task.auto_upload_paths) {
+        task.auto_upload_paths = false;
+        toast(
+          "已切换为手动上传路径，其他目录保留当前值；请核对四个目标目录后保存。",
+        );
+      }
+      mark();
+      renderEditor();
+      $("browser-dialog").close();
+    };
+    $("mkdir").onclick = async () => {
+      try {
+        const v = await api("/api/mkdir", {
+          server: browser.server,
+          parent: browser.path,
+          name: $("folder-name").value,
+          with_ab: $("with-ab").checked,
+        });
+        await browseTo(v.path);
+        $("folder-name").value = "";
+        toast(
+          "新目录已创建" + ($("with-ab").checked ? "，已包含 A / B。" : "。"),
+        );
+      } catch (e) {
+        $("browser-error").textContent = e.message;
+      }
+    };
+    document.querySelector(".logs").ontoggle = refreshLogs;
+    window.annotationUI?.init();
+    snapshot = await api("/api/resume", {});
+    setupDestinationLayout();
+    renderEditor();
+    renderTasks();
+    renderProgress();
+    await refresh();
+    check("data_server");
+    check("training_server");
+    setInterval(refresh, 2000);
+  } catch (e) {
+    toast("界面初始化失败：" + e.message, true);
+  }
+}
+init();

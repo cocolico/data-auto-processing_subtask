@@ -1,0 +1,20 @@
+# Template only. Not installed or enabled by this project.
+# Paths are server-native; verify permissions before installation.
+[Unit]
+Description=Automatic ROS bag cleaning and multimodal LeRobot ingestion
+After=local-fs.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/data/data-fruits/real/harvest-tomato/code/auto-clean-convert
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/data/data-fruits/real/harvest-tomato/code/auto-clean-convert/.venv/bin/python -m convest.ingest.cli run --config /data/data-fruits/real/harvest-tomato/code/auto-clean-convert/configs/ingest.server.yaml
+Restart=on-failure
+RestartSec=30
+KillMode=mixed
+TimeoutStopSec=900
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

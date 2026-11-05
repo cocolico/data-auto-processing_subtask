@@ -1,0 +1,37 @@
+{
+  "GRASP_CLUSTER": {
+    "legacy": "right robot hand: grasp tomato truss.",
+    "en": "Grasp the tomato truss securely with the right hand.",
+    "zh": "用右手抓稳整串番茄。"
+  },
+  "PRESENT_CLUSTER": {
+    "legacy": "right robot hand: lift tomato truss to the center.",
+    "en": "Lift the tomato truss to the center with the right hand.",
+    "zh": "用右手提起番茄串并移至中间位置。"
+  },
+  "APPROACH_AND_GRASP": {
+    "legacy": "left robot hand: approach and grasp one tomato; right robot hand: hold truss.",
+    "en": "Approach and grasp one tomato with the left hand while holding the truss steady with the right hand.",
+    "zh": "用左手接近并抓紧一颗番茄，同时用右手稳定托持番茄串。"
+  },
+  "DETACH_AND_PLACE": {
+    "legacy": "left robot hand: detach tomato and place it in the left tray; right robot hand: hold truss.",
+    "en": "Detach the tomato and place it in the left tray with the left hand while holding the truss steady with the right hand.",
+    "zh": "用左手摘下番茄并放入左侧果盘，同时用右手稳定托持番茄串。"
+  },
+  "RETURN_AND_RELEASE": {
+    "legacy": "right robot hand: return tomato truss to the right white plate and release it.",
+    "en": "Return the tomato truss to the right white plate and release it with the right hand.",
+    "zh": "用右手将番茄串放回右侧白盘并松手。"
+  },
+  "REORIENT_STEM": {
+    "legacy": "right robot hand: move and rotate the tomato stem with its fingers.",
+    "en": "Move and rotate the tomato stem using the fingers of the right hand.",
+    "zh": "用右手手指移动并旋转番茄杆。"
+  },
+  "END": {
+    "legacy": "both robot hands: remain still in low resting positions.",
+    "en": "Keep both hands still in their low resting positions.",
+    "zh": "让双手在低位休息姿态保持静止。"
+  }
+}

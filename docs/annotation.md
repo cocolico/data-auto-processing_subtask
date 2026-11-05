@@ -1,0 +1,182 @@
+# GUI 自动标注集成
+
+## 当前工作站的左右手约定
+
+cam0 画面左侧对应机器人左臂/左手，画面右侧对应机器人右臂/右手，不做镜像反转。
+标注提示词要求每一步明确写出 left robot hand、right robot hand 或 both robot hands；
+双手分工不同则明确相关机械手各自的可见动作，包括辅助托持。手跨越画面中心时保持身份连续，
+遮挡导致无法确定时标为 uncertain，不用 one robot hand / the other hand 代替左右身份。
+这是模型指令；现有格式校验不独立证明模型的左右判断正确，仍需对照视频检查。
+已有成功标注不会自动重写；新提示词需要重新启动相关进程后用于新的请求。
+
+## 当前七动作标注协议
+
+当前提示词按用户实际流程分为：右手抓稳整串、右手提起送到中间、左手接近并抓紧单果、
+左手从开始摘取到放入果盘、右手放回白盘并松手、右手移动并用手指旋转番茄杆、双手低位静止结束。
+正常衔接并入对应动作，不确定性写入事实字段。完整边界、英文名称、放回计数条件和设计依据见
+[七动作协议说明](tomato_subtask_protocol.md)。实际英文 prompt 在 `src/convest/annotation/prompts.py`。
+
+不再单独划分正常动作中的目标选择、接近、调姿、摘离和搬运等微阶段。第 3/4 类在每次摘取中
+分别出现，动作 4 包含摘离与放置；右手持续托持时不重复虚构动作 1/2。
+保留目标 ID、尝试编号、起点决策记忆和已收集记录；新协议由 `workflow.py` 校验，旧记录仍由原协议读取。
+
+当前自动流程不设置人工审批门槛。新模型输出采用精简七字段协议：
+时间区间、动作类别、文字、目标、决策和放回计数。旧响应仍可读取，但新持久结果及导出
+会投影到精简格式，不携带旧证据、尝试编号、动作结果或任务记忆字段。
+已有历史原始响应和已发布批次不自动重写。
+
+运动检查保留：END 覆盖明显运动、送盘动作没有足够左臂位移、放回/旋杆遗漏显著左手动作等
+仍会被拦截。0.3 rad 阈值是工位合理性检查，不能单独证明低位姿态、成功摘离、成功放置或计数条件。
+同名独立区间仍保留，事件记录保存在 `meta/annotation_events.jsonl` 和批次审计。
+本次协议已进行本地回归测试；尚未对新提示词进行真实模型效果验证或远端上传验收。
+
+## 工作流程
+
+1. 在“工作流总览”选择当前任务、Franka 对应手型（Wuji / Sharpa）、ROSbag 输入父目录及各上传父目录。
+2. 在“连接与资源”输入一次豆包 API Key 并保存。凭据不属于任务设置；更换凭据可以在任务运行时操作。
+3. 在“数据标注”启用当前任务的自动标注，指定模型 ID / 接入点 ID、视频理解采样率和单条结果重试上限。保存设置沿用原有规则：先停止工作流并等待收尾，再保存。默认不开启标注，旧任务的清洗转换不检查模型 Key 或额度。
+4. 开始当前任务。每条 ROSbag 清洗、转换和校验完成、发布到本机不可变批次之后，由持久队列发现对应 Episode 并标注，不等待 24 小时批次封存才开始模型请求。
+5. 模型输入为完整 cam0 视频。cam1 / cam2 是手腕视角，仅保留在数据中和用于本机预览。按七类主要动作的完成边界标注，每次单果抓握与摘取送盘分别记录，不规定总段数；常规衔接不单独切段，异常或不确定结果保留质量说明。
+6. 批次封存并且所有条目标注达到终态后，仅汇总自动校验通过的 completed 条目，重新编号并导出标准完整 LeRobot；原始转换产物保持原样。若全部失败或未纳入，则保留材料并不发布空数据集。
+7. 完整标注数据上传数据服务器；normal 和 speedup 均从标注后的成功子集生成，并分别上传训练服务器。原始 ROSbag 备份仍独立执行。
+8. 预览只读，不改变处理状态；可以同时查看粗、细标注和原视频。
+
+UI 打开后恢复上次处于运行意图的已启用任务；已停止的任务不会因此启动。不会安装工控机开机自启服务；服务仅启动而尚未打开网页时不触发恢复。队列已完成条目直接跳过。
+
+## 输入与交付数据
+
+目前自动接收的是本工程捕获 / 转换工作流发布的 LeRobot v2.1 批次，不是一个新的任意路径批量标注 CLI。任务开始前仍可像原有清洗转换一样指定 ROSbag 父目录和上传父目录。若要直接处理另一处独立的已有 LeRobot 数据集，需要另外增加导入入口；本次没有把远程挂载目录加入可写路径。
+
+完整标注交付目录包含：
+
+```text
+批次_data_lerobot/
+  data/chunk-xxx/episode_xxxxxx.parquet
+  videos/chunk-xxx/observation.images.cam0/episode_xxxxxx.mp4
+  videos/chunk-xxx/observation.images.cam1/episode_xxxxxx.mp4
+  videos/chunk-xxx/observation.images.cam2/episode_xxxxxx.mp4
+  meta/info.json
+  meta/tasks.jsonl
+  meta/episodes.jsonl
+  meta/episodes_stats.jsonl
+  meta/annotation_granularity.jsonl  # 粗细双层标注及映射
+```
+
+- `meta/tasks.jsonl` 保存细分步骤词表，帧级 `task_index` 引用对应步骤。
+- `meta/annotation_granularity.jsonl` 是唯一双粒度事件文件，包含细动作、粗阶段、帧边界和来源映射；训练程序需显式读取。
+- 完整交付保留源非索引传感器列、Arrow schema、帧数、时间戳和视频字节；不改写原数据。
+- 如果只交付成功子集，`episode_index`、全局 `index` 和对应标准元数据连续重建；`frame_index` 保持每条 Episode 原样。统计中更新三个索引字段，其他统计保留。
+- 原始整体任务词表、来源 Episode 映射、失败清单、模型设置、步骤与已知 token 用量写入数据集外的 `annotation.json`；交付数据集中的事件文件属于训练标签，不是调试文件。
+- normal 仍按原实现保留训练字段、原始数值和 RGB 视频；细分任务随数据保留。
+- speedup 仍执行既有 AdaTempo 时间压缩，轨迹和视频发生相应重采样；`task_index` 按观测源帧的最近邻同步，绝不对标签编号做数值插值。
+
+## 界面
+
+- **工作流总览**：原有任务、清洗转换、上传、路径选择、SSH 配置和日志。
+- **数据标注**：当前任务开关 / 模型参数、保存与启动、暂停 / 继续、待恢复项立即重试、每条请求次数和已知 token 用量、封存成品路径。暂停允许当前请求完成和落盘，随后不再发出新请求；不会清除队列。
+- **结果预览**：选择已完成或旧版保留的 Episode，切换 cam0 / cam1 / cam2，查看时间区间与文字，点击步骤序号跳转，高亮当前播放区间。不提供文字或时间手工编辑。释放本机视频后仍可读标签，但无法继续播放原视频。
+- **连接与资源**：本机 Key 保存、更换与掩码状态、主动服务连接检查、磁盘与上传端点信息。连接检查不发送视频，也不能证明具体模型权限和额度充足。
+
+## 故障策略
+
+| 情况 | 处理 |
+| --- | --- |
+| 临时断网、限流、服务端临时错误 | SQLite 持久状态，退避并继续重试，不消耗结果格式重试上限 |
+| Key 无效、权限或账户额度问题 | 阻塞当前整个任务的新作业；其他任务独立；更换凭据后或定时探测成功后恢复 |
+| 请求已发出但没有落盘结果 | 已有响应 ID 时尝试查询；没有可查询 ID 时有限次重新请求，记录未知结果次数，可能重复计费，不承诺恰好调用一次 |
+| 回复非 JSON、时间覆盖不完整或协议字段错误 | 按单条上限请求修正；耗尽后隔离该条，继续其余条目 |
+| 视频过大 / 上下文不支持 / 源视频变化 | 隔离并保留，不自动截断或降采样；当前本地 Files 上传适配器使用 512 MiB 防护阈值，此阈值不是视频时长或步骤数限制 |
+| 本机磁盘不足 | 低于 8 GiB 保留余量时停止新转换与标注；导出还检查成品空间；就绪上传继续，空间恢复后自动推进 |
+| 远端同名目标内容不同 | 沿用原有冲突保护，不覆盖已发布文件 |
+| 放回计数非零/未知 | 保留实际计数或 null，自动校验通过后正常导出 |
+| 协议外动作或时间覆盖错误 | 仍按格式错误策略处理，不伪造动作或跳过校验 |
+| 本机重启 / 进程退出 | 保存队列和请求结果；打开 UI 后恢复上次运行任务，成功项不因模型 / 提示词变化自动重新标注 |
+
+默认只处理开启标注后新增的转换数据；可显式纳入当前运行版本中尚未标注的已有条目。已完成发布的批次不会因勾选“包含已有”而追加重写。改变模型不重标成功项；已排队条目保留入队时冻结的模型设置。输入 / 上传端点等原有语义配置发生变化仍会创建原工作流的新运行版本，标注缓存也按版本隔离，避免混淆不同批次；这不是迁移旧队列或重新标注的功能。
+
+不设置日总量或任务总量 API 预算。结果格式错误与未知请求共用一个单条重试计数上限（默认在首次尝试之外共允许重试 2 次）；有实际返回的用量按请求记录并汇总，结果未知时无法准确统计实际账单。
+
+## 凭据与运行文件
+
+相对工程根目录：
+
+```text
+outputs/gui/credentials/ark.key                        # 目录 0700，文件 0600
+outputs/gui/resume-intent.json                        # 明确运行 / 停止意图
+outputs/gui/annotation/<task-id>/<runtime-version>/
+  queue.sqlite3                                      # Episode / 批次持久队列
+  pause.json / blocked.json / progress.json           # 状态（按需产生）
+  granularity/<job-id>.json                           # 每条结果的粗细标注
+  sources/<job-id>.json                               # 标注视频 SHA256
+  requests/<job-id>/call-xxxx/                         # 请求检查点、原始返回、文件清理记录
+  datasets/<batch-id-hash>/                           # 标准标注成品
+  receipts/<batch-id-hash>/annotation.json            # 数据集外来源与失败报告
+```
+
+上述运行目录已由 `.gitignore` 的 `outputs/` 排除。Key 不写入 settings、请求材料、日志或版本库，接口不返回原文。不要手工提交运行目录。
+
+数据服务器附带审计写入上传父目录下 `.workflow-annotations/<task-id>/<batch-id>/`；训练服务器沿用 `.workflow-pairs/` 并附带 `annotation.json`。复用已有 staging、全文件 SHA256 校验、发布和 OSS 中转清理代码；不会编辑远端已发布数据。
+
+启用“释放本机完整 LeRobot”后，需要完整标注副本、normal、speedup 和配对审计均完成远端验证，再通过持久隔离 / 删除流程清理本机不可变源代和标注成品的 data / videos。含失败或未纳入条目的整个批次保守保留，便于后续恢复；原始 ROSbag 保留策略独立，仍由原备份开关控制。元数据、队列、步骤、来源和完成凭据保留。
+
+## 安装与使用
+
+在部署所用 Python 虚拟环境中安装（本次只提供命令，未执行）：
+
+```bash
+cd /home/ty/ty_works/data-auto-processing
+python -m pip install -e '.[conversion,training,annotation]'
+workflow-gui
+```
+
+已有服务器进程需要在方便时退出并重新启动才能载入 Python 修改。不要在正在转换 / 上传时强制终止进程；按原 UI 停止流程等待收尾。此次代码编辑没有自动启动或重启现有工作流。
+
+关键代码：`src/convest/annotation/` 包负责凭据、Ark 适配、原生数据导出、持久服务与预览；`src/convest/gui/` 集成调度、接口、侧栏与释放；`src/convest/training/` 将细分任务向 normal / speedup 传递。新适配器复用了现有标注软件包的格式约束和客户端请求方式，但部署不依赖另一份仓库。
+
+## 双粒度标注（精简 v2）
+
+新数据集仅保存 `meta/annotation_granularity.jsonl`，不再生成重复的
+`meta/annotation_events.jsonl`。模型输出细动作，程序确定性派生粗阶段，无额外模型调用。
+标准 Parquet `task_index` 和 `meta/tasks.jsonl` 继续表示细粒度标签。
+
+每条记录保留：`schema_version`、`episode_index`、`source_episode_index`、
+`source_recording_id`、`fps`、`length`、`interval_convention`、`fine_step_index_base`、
+`method`、`categories`、`fine_steps`、`coarse_steps`、`excluded_intervals`。
+`categories` 每项只含 `phase`、`text`、`text_zh`。
+
+| 层级 | 精确保留字段 |
+| --- | --- |
+| fine_steps 每段 | start_frame、end_frame、phase、text、target_id、decision、return_condition |
+| decision 非 null 时 | choice、target_id |
+| return_condition 非 null 时 | left_side_count |
+| coarse_steps 每段 | phase、text、text_zh、start_frame、end_frame、fine_step_indices |
+| excluded_intervals 每项 | fine_step_index |
+
+帧区间为左闭右开，步骤引用从零开始。时间由帧编号除以 fps 计算，只在界面显示，
+不重复保存粗段秒数。模型请求仍用 start_sec/end_sec 表达视频时间，标准化为帧后落盘。
+未映射区间的边界及动作类型由 fine_step_index 引用的细动作取得。
+
+| 粗 phase | 中文 | 对应细 phase |
+| --- | --- | --- |
+| PICK_UP | 拿起番茄 | GRASP_CLUSTER、PRESENT_CLUSTER |
+| PICK_TOMATO | 摘取番茄 | APPROACH_AND_GRASP、DETACH_AND_PLACE |
+| PUT_BACK | 放回番茄 | RETURN_AND_RELEASE |
+| ROTATE_STEM | 旋转番茄杆 | REORIENT_STEM |
+
+相邻同类细动作合并，保留各细段边界。END 和旧协议未映射动作只保留细步骤引用，
+不强行归入四类。旧响应可兼容读取，新持久结果会移除用户指定的冗余字段。
+因成功/失败、尝试编号及决策记忆不再保存，新协议不能执行依赖这些字段的结果一致性检查；
+字段合法性、时间覆盖、目标格式、源数据不变及既有运动检查仍保留。
+
+normal 原样保留双层文件；speedup 使用实际视频源帧映射重建细段，再重建粗段，不改变原算法采样；未采到的细段在 processing 中记录源编号。详见 normal_speedup.md。历史已发布文件及模型原始响应不改写；
+旧导出若包含重复事件文件或旧版结构，不会通过 v2 校验，也不会被悄悄覆盖。
+
+## 正式旋转规则（compact-v6）
+
+正式 prompt 自动包含 src/convest/annotation/rotation_rules.py 的两条规则：
+1. 原本候选为右手抓稳整串番茄且持续至少 9 秒时，优先重新考虑旋转动作；保留现有规则中视觉证据和分段条件。
+2. 模型第一遍识别后，对每段至少 9 秒的旋转动作，将末尾 2.8 秒单独划为 GRASP_CLUSTER。
+   30 fps 数据对应 84 帧。只对第一遍旋转段划分一次，不递归，不把新生成的抓稳段合并掉。
+
+这两条是正式标注规则，非测试开关；不改变模型采样率或 normal/speedup 原算法采样。
+模型在同一次响应内执行两遍过程，保存时不再二次划分。

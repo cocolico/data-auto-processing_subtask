@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+outputs/
+*.partial/
+.cache/
+configs/ingest.server.yaml
+configs/training.local.yaml
+deploy/wheels/
+runtime/
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
