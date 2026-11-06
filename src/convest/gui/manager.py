@@ -153,8 +153,10 @@ class Manager:
             result.append(item)
         disk=__import__('shutil').disk_usage(self.root)
         from convest.annotation import credentials
+        from convest.annotation.trial_preview import list_runs
         return {'settings':settings,'tasks':result,'updated_ns':time.time_ns(),
                 'credential':credentials.status(self.root),
+                'annotation_trials':list_runs(),
                 'disk':{'free':disk.free,'total':disk.total},'batch_hours':24}
 
     def remember(self,tid,running):

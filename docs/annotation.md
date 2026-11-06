@@ -47,6 +47,8 @@ UI 打开后恢复上次处于运行意图的已启用任务；已停止的任�
 
 目前自动接收的是本工程捕获 / 转换工作流发布的 LeRobot v2.1 批次，不是一个新的任意路径批量标注 CLI。任务开始前仍可像原有清洗转换一样指定 ROSbag 父目录和上传父目录。若要直接处理另一处独立的已有 LeRobot 数据集，需要另外增加导入入口；本次没有把远程挂载目录加入可写路径。
 
+本机 `outputs/annotation-smoke/` 中已完成的单条测试草稿可在 GUI“结果预览”的“标注结果”列表中只读查看。该入口读取本地三路视频副本和草稿标签，与正式工作流队列分离；标记为视觉复核未通过的草稿不能用于训练或上传。
+
 完整标注交付目录包含：
 
 ```text
@@ -133,7 +135,7 @@ workflow-gui
 
 关键代码：`src/convest/annotation/` 包负责凭据、Ark 适配、原生数据导出、持久服务与预览；`src/convest/gui/` 集成调度、接口、侧栏与释放；`src/convest/training/` 将细分任务向 normal / speedup 传递。新适配器复用了现有标注软件包的格式约束和客户端请求方式，但部署不依赖另一份仓库。
 
-## 双粒度标注（精简 v2）
+## 双粒度标注（精简 v3）
 
 新数据集仅保存 `meta/annotation_granularity.jsonl`，不再生成重复的
 `meta/annotation_events.jsonl`。模型输出细动作，程序确定性派生粗阶段，无额外模型调用。
@@ -142,14 +144,14 @@ workflow-gui
 每条记录保留：`schema_version`、`episode_index`、`source_episode_index`、
 `source_recording_id`、`fps`、`length`、`interval_convention`、`fine_step_index_base`、
 `method`、`categories`、`fine_steps`、`coarse_steps`、`excluded_intervals`。
-`categories` 每项只含 `phase`、`text`、`text_zh`。
+`categories` 每项只含英文 `phase`、`text`。中文动作名称只在预览界面呈现，不写入交付文件。
 
 | 层级 | 精确保留字段 |
 | --- | --- |
 | fine_steps 每段 | start_frame、end_frame、phase、text、target_id、decision、return_condition |
 | decision 非 null 时 | choice、target_id |
 | return_condition 非 null 时 | left_side_count |
-| coarse_steps 每段 | phase、text、text_zh、start_frame、end_frame、fine_step_indices |
+| coarse_steps 每段 | phase、text、start_frame、end_frame、fine_step_indices |
 | excluded_intervals 每项 | fine_step_index |
 
 帧区间为左闭右开，步骤引用从零开始。时间由帧编号除以 fps 计算，只在界面显示，
@@ -171,15 +173,29 @@ workflow-gui
 normal 原样保留双层文件；speedup 使用实际视频源帧映射重建细段，再重建粗段，不改变原算法采样；未采到的细段在 processing 中记录源编号。详见 normal_speedup.md。历史已发布文件及模型原始响应不改写；
 旧导出若包含重复事件文件或旧版结构，不会通过 v2 校验，也不会被悄悄覆盖。
 
-## 正式旋转规则（compact-v6）
+## 调整番茄规则（multiview-v8）
 
-正式 prompt 自动包含 src/convest/annotation/rotation_rules.py 的两条规则：
-1. 原本候选为右手抓稳整串番茄且持续至少 9 秒时，优先重新考虑旋转动作；保留现有规则中视觉证据和分段条件。
-2. 模型第一遍识别后，对每段至少 9 秒的旋转动作，将末尾 2.8 秒单独划为 GRASP_CLUSTER。
-   30 fps 数据对应 84 帧。只对第一遍旋转段划分一次，不递归，不把新生成的抓稳段合并掉。
+第 6 类 `REORIENT_STEM` 的提示改为右手调整番茄的位置或朝向，英文指令为
+`Adjust the tomato truss using the right hand.`，不要求必须出现旋转。
+保留持续至少 9 秒的抓握候选触发重新检查的规则，时长本身不能证明调整动作。
+已移除旋转末尾固定 2.8 秒划为抓握的规则；起止边界根据可见动作判断。
+历史结果不会自动重标，需重新调用模型才会应用新提示。
 
-这两条是正式标注规则，非测试开关；不改变模型采样率或 normal/speedup 原算法采样。
-模型在同一次响应内执行两遍过程，保存时不再二次划分。
+## 预览中的人工修改副本
+
+动作时间轴固定每屏 60 秒，每 10 秒显示刻度，超出部分横向滚动；编辑不会根据动作长短自动缩放。
+打开结果后可开启修改模式。拖动粗、细色块左右边缘改变帧边界；共同边界同时调整相邻段，
+保持至少一帧、不重叠，视频首尾边界固定。拖动时三路视频、播放头和进度条同步定位到当前边界帧。右键粗段可选四类动作，右键细段可选 1–6 类。
+右键“中分”按帧从当前动作中点切成两段，单帧段不可分。“向左融合”合并当前块与左侧块，“向右融合”合并当前块与右侧块；融合后整个区间使用当前右键选中块的类别，被合并的相邻块不再保留，仅允许时间连续的相邻段。
+粗细两层边界联动：每个粗段严格覆盖完整的连续细段，不能截断细段。拖动细段的粗细共同边界会同步粗段；拖动或中分粗段时，在新边界位置同步切分细段。跨粗段融合细段时，对应粗区间继承当前细段原本所在粗段的类别。导入旧副本时补齐粗边界处的细段切分，保存前前端和服务端都校验对应关系。停止修改模式后锁定拖动和类别选择。
+
+“保存到本地”仅在修改模式高亮。按钮后方的“选择本地路径”打开本机目录浏览器；
+选定目录会在当前浏览器中记住，刷新后仍保留。后续点击保存直接通过本机服务更新该目录中当前录制、当前 Episode 的人工副本，无需再次选择路径。
+每个录制和 Episode 使用独立文件名，保存采用临时文件后原子替换；不会覆盖无人工副本标记的已有文件。
+副本包含完整粗细时间轴、英文动作和原视频关联信息，不打包视频文件。
+可先打开对应 Episode，再用“导入标注 JSON”继续审核同一录制的副本。
+修改在浏览器中完成，保存仅写入用户选定的人工副本目录，不写回源数据，不进入自动标注、上传和训练导出流程。
+专业查看器导出仍读取原任务结果。
 
 ### 三视角标注升级说明
 

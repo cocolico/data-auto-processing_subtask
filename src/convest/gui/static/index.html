@@ -425,9 +425,10 @@
     </main>
     <main id="view-preview" class="annotation-view" hidden>
       <section class="card annotation-settings review-shell">
-        <div class="card-head"><div><p class="eyebrow">ANNOTATION REVIEW</p><h2>多视角标注检查</h2></div><span class="tag">只读 · 不改变训练数据</span></div>
-        <div class="review-picker"><label>已完成的 Episode<select id="annotation-preview-job"></select></label><button id="annotation-load-preview" class="primary">打开结果</button><label>突出显示<select id="annotation-camera"><option value="observation.images.cam0">cam0 · 总览</option><option value="observation.images.cam1">cam1 · 右手腕</option><option value="observation.images.cam2">cam2 · 左手腕</option></select></label></div>
+        <div class="card-head"><div><p class="eyebrow">ANNOTATION REVIEW</p><h2>多视角标注检查</h2></div><span class="tag">人工修改副本 · 独立另存</span></div>
+        <div class="review-picker"><label>标注结果<select id="annotation-preview-job"></select></label><button id="annotation-load-preview" class="primary">打开结果</button><label>突出显示<select id="annotation-camera"><option value="observation.images.cam0">cam0 · 总览</option><option value="observation.images.cam1">cam1 · 右手腕</option><option value="observation.images.cam2">cam2 · 左手腕</option></select></label></div>
         <p id="annotation-preview-info" class="hint" role="status">选择已标注的 Episode，三路视频将按同一时间轴播放。</p>
+        <div class="actions review-edit-actions"><button id="review-edit-start" disabled>开启修改模式</button><button id="review-edit-stop" disabled>停止修改模式</button><button id="review-import" disabled>导入标注 JSON</button><input id="review-import-file" type="file" accept=".json,application/json" hidden><span id="review-edit-status" role="status">打开结果后可修改独立副本。</span></div>
         <div id="review-summary" class="review-summary"></div>
         <div class="review-workspace">
           <div class="review-stage">
@@ -442,9 +443,9 @@
             </div>
             <div class="review-clock"><output id="review-time">00:00.000 / 00:00.000</output><output id="review-frame">帧 —</output><span id="review-sync">等待视频</span></div>
             <input id="review-scrubber" type="range" min="0" max="1" value="0" step="1" aria-label="按帧定位视频时间" disabled>
-            <div class="review-timelines" id="review-timelines"><div class="review-ruler" id="review-ruler"></div><div class="review-track-row"><span>粗阶段</span><div class="review-track" id="review-coarse-track"></div></div><div class="review-track-row"><span>细动作</span><div class="review-track" id="review-fine-track"></div></div></div>
+            <div class="review-timeline-scroll" id="review-timeline-scroll"><div class="review-timelines" id="review-timelines"><div class="review-ruler" id="review-ruler"></div><div class="review-track-row"><span>粗阶段</span><div class="review-track" id="review-coarse-track"></div></div><div class="review-track-row"><span>细动作</span><div class="review-track" id="review-fine-track"></div></div></div></div>
             <div id="review-legend" class="review-legend"></div>
-            <p class="hint review-shortcuts">空格 播放 / 暂停 · ← → 逐帧 · 点击色块跳转；色块表示标注类别，不代表模型置信度。</p>
+            <p class="hint review-shortcuts">空格 播放 / 暂停 · ← → 逐帧 · 点击色块跳转 · 时间轴固定每屏 60 秒，可横向滚动；色块中的编号表示细动作类型。开启修改模式后，拖动色块左右边缘调整时间，右键修改动作类型、中分或融合。向左融合合并左侧块，向右融合合并右侧块；合并后整个区间使用当前右键选中块的动作类别。</p>
           </div>
           <aside class="review-inspector"><p class="eyebrow">CURRENT SEGMENT</p><div id="review-inspector"><p class="hint">打开结果后显示当前动作、目标与时间边界。</p></div></aside>
         </div>
@@ -456,7 +457,7 @@
       </section>
       <section class="card annotation-settings review-tools">
         <div><h3>在专业查看器中检查</h3><p class="hint">导出三路采样画面与完整动作边界；本地生成，不调用模型。默认 2 fps，仅用于预览，逐帧检查请使用上方原视频。</p></div>
-        <div class="actions"><button id="review-export-rrd" disabled>导出 Rerun · RRD</button><button id="review-export-mcap" disabled>导出 Foxglove · MCAP</button><button id="review-export-json" disabled>下载标注 JSON</button></div>
+        <div class="actions"><button id="review-export-rrd" disabled>导出 Rerun · RRD</button><button id="review-export-mcap" disabled>导出 Foxglove · MCAP</button><button id="review-export-json" disabled>下载标注 JSON</button><button id="review-save-local" disabled>保存到本地（另存副本）</button><button id="review-save-directory">选择本地路径</button><input id="review-save-path" readonly aria-label="人工副本保存目录" placeholder="请选择保存目录"></div>
         <p id="review-export-status" class="hint" role="status">打开结果后检查本机可用的可视化 SDK。</p><a id="review-export-download" hidden>下载查看器文件</a>
       </section>
     </main>
@@ -505,6 +506,7 @@
       </div>
     </dialog>
     <div id="toast" role="status"></div>
+    <dialog id="review-directory-dialog"><h3>选择人工副本保存目录</h3><div class="actions"><input id="review-directory-path" aria-label="浏览本地目录"><button id="review-directory-go">前往</button><button id="review-directory-up">上一级</button></div><div id="review-directory-entries"></div><p id="review-directory-error" role="status"></p><div class="actions"><button id="review-directory-select" class="primary">使用此目录</button><button id="review-directory-cancel">取消</button></div></dialog>
     <script src="/review.js"></script>
     <script src="/annotation.js"></script>
     <script src="/app.js"></script>

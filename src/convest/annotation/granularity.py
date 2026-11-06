@@ -7,7 +7,7 @@ Unmapped legacy/END phases are explicit exclusions, not invented actions.
 from copy import deepcopy
 import math
 
-SCHEMA = 'tomato-dual-granularity-v2'
+SCHEMA = 'tomato-dual-granularity-v3'
 FILENAME = 'annotation_granularity.jsonl'
 CATEGORIES = (
     ('PICK_UP', '拿起番茄', 'Pick up the tomato truss.'),
@@ -40,12 +40,12 @@ def derive(steps, fps, length):
         if category_id is None:
             excluded.append({'fine_step_index': index})
             continue
-        phase, text_zh, text = CATEGORIES[category_id]
+        phase, _, text = CATEGORIES[category_id]
         if coarse and coarse[-1]['phase'] == phase and coarse[-1]['end_frame'] == start:
             segment = coarse[-1]
             segment.update(end_frame=end)
         else:
-            segment = {'phase': phase, 'text': text, 'text_zh': text_zh,
+            segment = {'phase': phase, 'text': text,
                        'start_frame': start, 'end_frame': end, 'fine_step_indices': []}
             coarse.append(segment)
         segment['fine_step_indices'].append(index)
@@ -54,8 +54,7 @@ def derive(steps, fps, length):
     return {'schema_version': SCHEMA, 'fps': fps, 'length': length,
             'interval_convention': '[start_frame,end_frame)', 'fine_step_index_base': 0,
             'method': 'deterministic_fine_phase_mapping',
-            'categories': [{'phase': p, 'text': en, 'text_zh': zh}
-                           for i, (p, zh, en) in enumerate(CATEGORIES)],
+            'categories': [{'phase': p, 'text': en} for p, _, en in CATEGORIES],
             'fine_steps': fine, 'coarse_steps': coarse, 'excluded_intervals': excluded}
 
 
@@ -65,3 +64,16 @@ def records(selected, labels, fps):
              'source_recording_id': ep.get('source_recording_id'),
              **derive(labels[ep['episode_index']], fps, ep['length'])}
             for i, ep in enumerate(selected)]
+
+
+def legacy_v2_records(selected, labels, fps):
+    """Reproduce prior records only when validating an existing v2 export."""
+    names = {phase: zh for phase, zh, _ in CATEGORIES}
+    result = records(selected, labels, fps)
+    for record in result:
+        record['schema_version'] = 'tomato-dual-granularity-v2'
+        for category in record['categories']:
+            category['text_zh'] = names[category['phase']]
+        for step in record['coarse_steps']:
+            step['text_zh'] = names[step['phase']]
+    return result

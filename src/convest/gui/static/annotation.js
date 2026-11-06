@@ -26,6 +26,7 @@ window.annotationUI = (() => {
     const progress = a.progress || {};
     const completed = (a.episodes||[]).filter(j=>j.state==="completed");
     const previewable = (a.episodes||[]).filter(j=>["completed","needs_review"].includes(j.state));
+    const trials = snapshot.annotation_trials || [];
     $("annotation-progress").textContent = `共 ${a.episodes?.length||0} 条 · 成功 ${completed.length} 条` + (progress.id ? ` · 最近阶段：${title(progress.phase)}` : "") + (a.paused ? " · 当前请求结束后暂停，不再发送新请求" : "");
     $("annotation-jobs").innerHTML = (a.episodes||[]).map(j=>{
       let usage={};try {usage=JSON.parse(j.usage||"{}");}catch (_) {}
@@ -33,25 +34,28 @@ window.annotationUI = (() => {
       return `<tr><td>${esc(j.route)} / ${esc(j.recording_id)}</td><td>${j.source_ep}</td><td>${esc(title(j.state))}</td><td>${j.runs}</td><td>${usage.total_tokens == null ? "—" : esc(usage.total_tokens)+" tokens"}</td><td>${esc((j.error||"")+retry)}</td></tr>`;
     }).join("") || '<tr><td colspan="6">尚无标注记录。保存并启动启用标注的任务后，自动接收转换完成的 Episode。</td></tr>';
     $("annotation-batches").innerHTML = (a.batches||[]).map(b=>`<p><strong>${esc(b.route)} / ${esc(b.batch_id)}</strong> · ${esc(title(b.state))}<br><code>${esc(b.output||b.error||"等待封存与标注完成")}</code></p>`).join("") || '<p class="hint">尚无封存后的标注成品。</p>';
-    const sig=selected+":"+previewable.map(j=>j.id+":"+j.state).join(",");
+    const sig=selected+":"+previewable.map(j=>j.id+":"+j.state).join(",")+":"+trials.map(t=>t.id+":"+t.status).join(",");
     if(sig!==signature) {
       const previous=$("annotation-preview-job").value;signature=sig;
-      $("annotation-preview-job").innerHTML=previewable.map(j=>`<option value="${esc(j.id)}">${esc(title(j.state))} · ${esc(j.route)} · Episode ${j.source_ep} · ${esc(j.recording_id)}</option>`).join("");
-      if(previewable.some(j=>j.id===previous)) $("annotation-preview-job").value=previous;
+      $("annotation-preview-job").innerHTML=previewable.map(j=>`<option value="${esc(j.id)}">${esc(title(j.state))} · ${esc(j.route)} · Episode ${j.source_ep} · ${esc(j.recording_id)}</option>`).join("")+
+        trials.map(t=>`<option value="trial:${esc(t.id)}">单独测试草稿 · Episode ${t.episode_index} · ${esc(t.id)}</option>`).join("");
+      if(previewable.some(j=>j.id===previous)||trials.some(t=>"trial:"+t.id===previous)) $("annotation-preview-job").value=previous;
       if(previewTask && previewTask!==selected) {preview=null;window.reviewUI.clear();$("annotation-preview-info").textContent="当前任务已切换，请重新选择结果。";}
     }
     const c=snapshot.credential||{};
     $("annotation-key-state").textContent=c.configured ? "已配置 · "+c.masked : "尚未配置 API Key";
     $("annotation-resources").textContent=`本机可用空间：${bytes(snapshot.disk.free)} / ${bytes(snapshot.disk.total)}。低于 8 GiB 时暂停新转换与标注；正式导出还需要足够的成品空间。202：${draft.data_server.host}:${draft.data_server.port}；训练服务器：${draft.training_server.host}:${draft.training_server.port}。`;
-    $("annotation-load-preview").disabled=!previewable.length;
+    $("annotation-load-preview").disabled=!(previewable.length||trials.length);
   }
   async function loadPreview() {
     const id=$("annotation-preview-job").value;if(!id)return;
-    const task=selected, button=$("annotation-load-preview");button.disabled=true;
+    const task=selected, trial=id.startsWith("trial:"), button=$("annotation-load-preview");button.disabled=true;
     try {
-      const data=await api("/api/annotation/preview?"+new URLSearchParams({task,job:id}));
-      if(task!==selected||id!==$("annotation-preview-job").value)return;
-      preview=data;previewTask=task;window.reviewUI.load(data,task);
+      const url=trial ? "/api/annotation/trial-preview?"+new URLSearchParams({run:id.slice(6)}) :
+        "/api/annotation/preview?"+new URLSearchParams({task,job:id});
+      const data=await api(url);
+      if((!trial&&task!==selected)||id!==$("annotation-preview-job").value)return;
+      preview=data;previewTask=trial?null:task;window.reviewUI.load(data,task);
     } finally { render(); }
   }
   function init() {

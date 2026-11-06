@@ -323,9 +323,12 @@ def validate_output(source, output, labels):
     selected=[ep for ep in source["episodes"] if ep["episode_index"] in labels]
     if (Path(output)/"meta/annotation_events.jsonl").exists():
         raise ValueError("Duplicate legacy annotation event file in compact export")
-    from .granularity import FILENAME, records
+    from .granularity import FILENAME, records, legacy_v2_records
     dual = Path(output)/"meta"/FILENAME
-    if not dual.is_file() or rows(dual) != records(selected, labels, source["info"]["fps"]):
+    actual_dual = rows(dual) if dual.is_file() else []
+    expected_dual = records(selected, labels, source["info"]["fps"])
+    legacy_dual = legacy_v2_records(selected, labels, source["info"]["fps"])
+    if actual_dual not in (expected_dual, legacy_dual):
         raise ValueError("Dual-granularity annotation data missing or changed")
     expected=projected_info(source,selected);expected["total_tasks"]=delivered["info"]["total_tasks"]
     if delivered["info"]!=expected:raise ValueError("Unexpected info changes")

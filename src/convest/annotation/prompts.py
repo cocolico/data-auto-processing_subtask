@@ -1,5 +1,5 @@
 """Compact seven-action annotation instructions; coarse stages are derived in code."""
-PROTOCOL_ID = 'tomato-seven-actions-multiview-v7'
+PROTOCOL_ID = 'tomato-seven-actions-multiview-v8'
 TOMATO_WORKFLOW_PROMPT = '''Annotate ONE dual-arm Franka robot with {hand} dexterous hands.
 Use visible video actions, not a guessed plan.
 
@@ -60,13 +60,14 @@ RIGHT thumb/index grasp at the START of return. The operator's intended count
 is zero, but report the actual nonnegative count or null if obscured. This is
 not the total remaining count. A visible return does not prove the count is zero.
 6. REORIENT_STEM
-"Move and rotate the tomato stem using the fingers of the right hand."
-Include movement, contact and finger adjustments serving one continuous stem
-rotation. Connected-truss orientation changes can show rotation when the thin
-stem is obscured. Wrist turning, translation, fruit swinging or closure alone
-are not proof. Examine the interval after return and before lift, but do not
-infer rotation solely from this sequence. End when rotation finishes. A separate
-subsequent grasp is GRASP_CLUSTER; direct lift can transition to PRESENT_CLUSTER.
+"Adjust the tomato truss using the right hand."
+Include purposeful repositioning, regrasping, finger adjustments or rotation of
+ the tomato truss to change its position or orientation for subsequent work.
+Rotation is not required. Distinguish adjustment from routine initial grasp
+alignment, lifting to the center and returning to the plate. Use visible hand
+and truss changes, not camera motion alone. End when adjustment finishes;
+choose all boundaries from visible actions, never from a fixed duration.
+A separate subsequent grasp is GRASP_CLUSTER; direct lift can transition to PRESENT_CLUSTER.
 7. END
 "Keep both hands still in their low resting positions."
 Only after BOTH hands are low and stationary through the final interval.
@@ -107,6 +108,6 @@ Example shape (not a video observation):
 '''
 
 # Insert before OUTPUT so the canonical JSON example remains the final prompt content.
-from .rotation_rules import NINE_SECOND_RULE, ROTATION_TAIL_RULE
+from .rotation_rules import NINE_SECOND_RULE
 TOMATO_WORKFLOW_PROMPT = TOMATO_WORKFLOW_PROMPT.replace(
-    '\nOUTPUT\n', '\n' + NINE_SECOND_RULE + '\n' + ROTATION_TAIL_RULE + '\nOUTPUT\n')
+    '\nOUTPUT\n', '\n' + NINE_SECOND_RULE + '\nOUTPUT\n')

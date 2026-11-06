@@ -42,10 +42,18 @@ class Handler(BaseHTTPRequestHandler):
             if route.path=='/api/annotation/preview':
                 from convest.annotation.preview import describe
                 return self.send(describe(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0]))
+            if route.path=='/api/annotation/trial-preview':
+                from convest.annotation.trial_preview import describe
+                return self.send(describe(query.get('run',[''])[0]))
             if route.path=='/api/annotation/video':
                 if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):return self.send({'error':'预览令牌无效'},403)
                 from convest.annotation.preview import video
                 path=video(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0],query.get('camera',[''])[0])
+                return self.video(path)
+            if route.path=='/api/annotation/trial-video':
+                if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):return self.send({'error':'预览令牌无效'},403)
+                from convest.annotation.trial_preview import video
+                path=video(query.get('run',[''])[0],query.get('camera',[''])[0])
                 return self.video(path)
             if route.path in ('/api/annotation/viewer-status','/api/annotation/viewer-file'):
                 from convest.annotation import visualization
@@ -78,6 +86,9 @@ class Handler(BaseHTTPRequestHandler):
             if route=='/api/save':return self.send({'settings':m.save(body)})
             if route=='/api/resume':
                 m.resume_on_open();return self.send(m.snapshot())
+            if route=='/api/annotation/manual-save':
+                from .manual_review import save
+                return self.send(save(body['directory'], body['payload']))
             if route=='/api/annotation/viewer-export':
                 from convest.annotation.visualization import start
                 return self.send(start(m.annotation_spec(body['task']),body['job'],body['format']))

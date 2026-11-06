@@ -8,7 +8,7 @@ import pytest
 
 from convest.annotation import native, preview
 from convest.annotation.compact import project
-from convest.annotation.granularity import derive, FILENAME
+from convest.annotation.granularity import derive, legacy_v2_records, FILENAME
 from convest.annotation.provider import normalize
 from convest.annotation.prompts import TOMATO_WORKFLOW_PROMPT
 
@@ -110,6 +110,9 @@ def test_native_export_contains_validated_dual_labels_and_source_mapping(tmp_pat
     vocabulary = {r['task_index']: r['task'] for r in native.rows(output/'meta/tasks.jsonl')}
     assert [vocabulary[t] for t in table['task_index'].to_pylist()] == [s['text'] for s in fine for _ in range(3)]
     assert before == {p: native.sha256(p) for p in before}
+    legacy = legacy_v2_records([source['episodes'][1]], {1: fine}, 30)
+    native.jsonl(output/'meta'/FILENAME, legacy)
+    assert native.validate_output(source, output, {1: fine})['status'] == 'passed'
     record['coarse_steps'][0]['end_frame'] += 1
     native.jsonl(output/'meta'/FILENAME, records)
     with pytest.raises(ValueError, match='Dual-granularity'):
@@ -145,7 +148,10 @@ def test_compact_prompt_normalizes_and_derives_exact_requested_keys():
     fine = normalize(raw, 30, 30, require_workflow=True)
     assert set(fine[0]) == {'start_frame', 'end_frame', 'phase', 'text', 'target_id', 'decision', 'return_condition'}
     result = derive(fine, 30, 30)
-    assert set(result['coarse_steps'][0]) == {'phase', 'text', 'text_zh', 'start_frame', 'end_frame', 'fine_step_indices'}
+    assert set(result['coarse_steps'][0]) == {'phase', 'text', 'start_frame', 'end_frame', 'fine_step_indices'}
+    assert set(result['categories'][0]) == {'phase', 'text'}
+    assert result['schema_version'] == 'tomato-dual-granularity-v3'
+    assert 'text_zh' not in json.dumps(result)
     assert 'coarse_full_coverage' not in result
     for removed in ['evidence_status', 'attempt_id', 'left_action', 'right_action', 'outcome', 'outcome_evidence', 'evidence_note', 'picked_ids', 'remaining_ids', 'reachable_ids', 'blocked_ids', 'blocked_reasons', 'right_grasp', 'intended_effect']:
         assert f'"{removed}"' not in raw

@@ -115,9 +115,11 @@ def test_model_workflow_cannot_silently_accept_legacy_payload():
 @pytest.mark.parametrize('hand', ['Wuji', 'Sharpa'])
 def test_prompt_json_example_and_robot_substitution(hand):
     text = PROMPT.format(hand=hand)
-    from convest.annotation.rotation_rules import NINE_SECOND_RULE, ROTATION_TAIL_RULE
-    assert NINE_SECOND_RULE in text and ROTATION_TAIL_RULE in text
-    assert text.count('PRODUCTION SECOND PASS:') == 1
+    from convest.annotation.rotation_rules import NINE_SECOND_RULE
+    assert NINE_SECOND_RULE in text
+    assert "2.8" not in text
+    assert "Adjust the tomato truss using the right hand." in text
+    assert 'PRODUCTION SECOND PASS:' not in text
     raw = text.split('Example shape (not a video observation):\n')[1]
     example, _ = json.JSONDecoder().raw_decode(raw)
     assert parse(example['steps'])[0]['phase'] == 'GRASP_CLUSTER'
