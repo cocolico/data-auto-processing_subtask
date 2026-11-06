@@ -424,15 +424,40 @@
       </section>
     </main>
     <main id="view-preview" class="annotation-view" hidden>
+      <section class="card annotation-settings review-shell">
+        <div class="card-head"><div><p class="eyebrow">ANNOTATION REVIEW</p><h2>多视角标注检查</h2></div><span class="tag">只读 · 不改变训练数据</span></div>
+        <div class="review-picker"><label>已完成的 Episode<select id="annotation-preview-job"></select></label><button id="annotation-load-preview" class="primary">打开结果</button><label>突出显示<select id="annotation-camera"><option value="observation.images.cam0">cam0 · 总览</option><option value="observation.images.cam1">cam1 · 右手腕</option><option value="observation.images.cam2">cam2 · 左手腕</option></select></label></div>
+        <p id="annotation-preview-info" class="hint" role="status">选择已标注的 Episode，三路视频将按同一时间轴播放。</p>
+        <div id="review-summary" class="review-summary"></div>
+        <div class="review-workspace">
+          <div class="review-stage">
+            <div class="review-videos" id="review-videos">
+              <figure data-camera="cam0" class="focused"><figcaption><span>cam0 · 外部总览</span><span class="camera-state" id="review-status-cam0">未载入</span></figcaption><video id="annotation-video" preload="metadata" muted playsinline aria-label="cam0 外部总览视频"></video></figure>
+              <figure data-camera="cam1"><figcaption><span>cam1 · 右手腕</span><span class="camera-state" id="review-status-cam1">未载入</span></figcaption><video id="annotation-video-cam1" preload="metadata" muted playsinline aria-label="cam1 右手腕视频"></video></figure>
+              <figure data-camera="cam2"><figcaption><span>cam2 · 左手腕</span><span class="camera-state" id="review-status-cam2">未载入</span></figcaption><video id="annotation-video-cam2" preload="metadata" muted playsinline aria-label="cam2 左手腕视频"></video></figure>
+            </div>
+            <div class="review-transport">
+              <button id="review-prev" title="上一个动作">上一段</button><button id="review-back" title="后退一帧（←）">−1 帧</button><button id="review-play" class="primary" title="播放 / 暂停（空格）" disabled>播放</button><button id="review-forward" title="前进一帧（→）">+1 帧</button><button id="review-next" title="下一个动作">下一段</button>
+              <label>速度<select id="review-speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label><label class="checkbox"><input id="review-loop" type="checkbox">循环当前片段</label>
+            </div>
+            <div class="review-clock"><output id="review-time">00:00.000 / 00:00.000</output><output id="review-frame">帧 —</output><span id="review-sync">等待视频</span></div>
+            <input id="review-scrubber" type="range" min="0" max="1" value="0" step="1" aria-label="按帧定位视频时间" disabled>
+            <div class="review-timelines" id="review-timelines"><div class="review-ruler" id="review-ruler"></div><div class="review-track-row"><span>粗阶段</span><div class="review-track" id="review-coarse-track"></div></div><div class="review-track-row"><span>细动作</span><div class="review-track" id="review-fine-track"></div></div></div>
+            <div id="review-legend" class="review-legend"></div>
+            <p class="hint review-shortcuts">空格 播放 / 暂停 · ← → 逐帧 · 点击色块跳转；色块表示标注类别，不代表模型置信度。</p>
+          </div>
+          <aside class="review-inspector"><p class="eyebrow">CURRENT SEGMENT</p><div id="review-inspector"><p class="hint">打开结果后显示当前动作、目标与时间边界。</p></div></aside>
+        </div>
+      </section>
       <section class="card annotation-settings">
-        <div class="card-head"><h2>标注结果预览</h2><span class="tag">只读预览</span></div>
-        <div class="two-fields"><label>已完成的 Episode<select id="annotation-preview-job"></select></label><label>相机<select id="annotation-camera"></select></label></div>
-        <button id="annotation-load-preview">打开结果</button><p id="annotation-preview-info" class="hint">选择已标注的 Episode，可查看视频与每个时间段的文字。预览不会阻塞自动交付。</p>
-        <video id="annotation-video" controls preload="metadata"></video>
-        <h3>粗粒度阶段</h3><p id="annotation-coarse-info" class="hint"></p>
-        <div class="table-scroll"><table><thead><tr><th>阶段</th><th>时间（秒）</th><th>粗任务 / 对应细步骤</th></tr></thead><tbody id="annotation-coarse-steps"></tbody></table></div>
-        <h3>细粒度动作</h3>
-        <div class="table-scroll"><table><thead><tr><th>步骤</th><th>时间（秒）</th><th>细分任务</th></tr></thead><tbody id="annotation-steps"></tbody></table></div>
+        <div class="card-head"><h3>动作明细</h3><label>筛选动作<select id="review-filter"><option value="">全部动作</option></select></label></div>
+        <div class="review-table-scroll"><table><thead><tr><th>步骤</th><th>时间 / 帧范围</th><th>动作与训练指令</th></tr></thead><tbody id="annotation-steps"></tbody></table></div>
+        <details class="review-coarse-details"><summary>粗粒度阶段与细动作对应关系</summary><p id="annotation-coarse-info" class="hint"></p><div class="table-scroll"><table><thead><tr><th>阶段</th><th>时间（秒）</th><th>粗任务 / 对应细步骤</th></tr></thead><tbody id="annotation-coarse-steps"></tbody></table></div></details>
+      </section>
+      <section class="card annotation-settings review-tools">
+        <div><h3>在专业查看器中检查</h3><p class="hint">导出三路采样画面与完整动作边界；本地生成，不调用模型。默认 2 fps，仅用于预览，逐帧检查请使用上方原视频。</p></div>
+        <div class="actions"><button id="review-export-rrd" disabled>导出 Rerun · RRD</button><button id="review-export-mcap" disabled>导出 Foxglove · MCAP</button><button id="review-export-json" disabled>下载标注 JSON</button></div>
+        <p id="review-export-status" class="hint" role="status">打开结果后检查本机可用的可视化 SDK。</p><a id="review-export-download" hidden>下载查看器文件</a>
       </section>
     </main>
     <main id="view-resources" class="annotation-view" hidden>
@@ -480,6 +505,7 @@
       </div>
     </dialog>
     <div id="toast" role="status"></div>
+    <script src="/review.js"></script>
     <script src="/annotation.js"></script>
     <script src="/app.js"></script>
   </body>

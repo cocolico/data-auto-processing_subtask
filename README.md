@@ -848,3 +848,7 @@ python scripts/check_rgb_source.py --dataset /path/to/dataset --output outputs/n
 本机浏览器打开 `http://127.0.0.1:8765`。可配置多任务、本机 A/B 输入、202 原包与完整 LeRobot 目录、28 normal/speedup 独立目录；支持 SSH 文件夹浏览、新建场景自动带 A/B、保存、开始、正常停止、断点续传与实时日志。沿用既有清洗和 24h 批次逻辑，保留 Sharpa 116/58、Wuji 108/54，不自动训练。
 
 默认创建空测试输入，不自动启动任务。新 GUI 配置和队列独立放在 `outputs/gui/`，不接管旧队列或迁移旧结果。目录、用户和端口都可编辑。安装与旧服务接管、路径层级、正常停止行为和验收边界见 [GUI 使用文档](docs/gui.md)。
+
+### 多视角标注检查
+
+结果预览现支持 cam0 总览、cam1 右手腕、cam2 左手腕同步播放、逐帧定位、粗细动作时间轴和片段循环，可通过可选 SDK 导出 Rerun RRD / Foxglove MCAP。安装和使用见 [多视角检查说明](docs/annotation-review.md)。

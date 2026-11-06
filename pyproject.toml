@@ -14,6 +14,7 @@ test = ["pytest>=8"]
 conversion = ["pyarrow==19.0.1", "av==14.2.0"]
 training = ["pyarrow==19.0.1", "av==14.2.0", "scipy>=1.13,<2", "numba>=0.60,<1"]
 preview = ["opencv-python-headless>=4.8"]
+visualization = ["rerun-sdk==0.42.0", "foxglove-sdk==0.30.3", "Pillow>=10", "av==14.2.0"]
 annotation = ["openai>=2,<3", "httpx[socks]>=0.27,<0.29", "pyarrow==19.0.1"]
 
 [project.scripts]

@@ -1153,3 +1153,60 @@ body > main { margin-left: 176px; }
   body > main { margin-left: 0; }
   .annotation-view { padding: 12px; }
 }
+
+/* Synchronized annotation review desk. */
+.review-picker { display: grid; grid-template-columns: minmax(240px, 1fr) auto minmax(160px, 220px); gap: 14px; align-items: end; margin-top: 20px; }
+.review-picker label { margin: 0; }
+.review-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0; }
+.review-summary > div { padding: 14px 18px; background: #f5f7fb; border: 1px solid var(--border); border-radius: 10px; }
+.review-summary span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.review-summary strong { font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.review-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 285px; gap: 22px; align-items: start; }
+.review-stage { min-width: 0; }
+.review-videos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-radius: 12px; padding: 10px; background: #101b2c; }
+.review-videos figure { margin: 0; min-width: 0; position: relative; border-radius: 6px; overflow: hidden; background: #07101d; }
+.review-videos figure.focused { grid-column: 1 / -1; grid-row: 1; }
+.review-videos figcaption { display: flex; justify-content: space-between; gap: 8px; color: #d3deee; background: #1c2c42; padding: 7px 10px; font-size: 11px; }
+.review-videos .camera-state { color: #8fa6c3; font-size: 10px; }
+.review-videos video, .review-videos #annotation-video { display: block; width: 100%; height: 150px; object-fit: contain; margin: 0; border-radius: 0; background: #07101d; }
+.review-videos .focused video { height: clamp(200px, 28vw, 340px); }
+.review-transport { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin: 16px 0 10px; }
+.review-transport button { padding: 7px 11px; font-size: 12px; }
+.review-transport label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; white-space: nowrap; }
+.review-transport select { width: auto; padding: 5px 8px; min-height: 32px; }
+.review-transport .checkbox { margin-left: auto; }
+.review-clock { display: flex; gap: 16px; flex-wrap: wrap; color: #526682; font-size: 11px; font-variant-numeric: tabular-nums; }
+#review-time { color: var(--ink); font-weight: 600; }
+#review-sync { margin-left: auto; }
+#review-scrubber { width: 100%; padding: 0; margin: 12px 0; accent-color: var(--blue); }
+.review-ruler { display: flex; justify-content: space-between; margin: 0 0 8px 60px; color: #8090a6; font-size: 9px; font-variant-numeric: tabular-nums; }
+.review-track-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: center; margin: 8px 0; font-size: 11px; color: #65768d; }
+.review-track { height: 32px; background: #e7edf4; position: relative; border-radius: 5px; }
+.review-segment { position: absolute; top: 0; height: 100%; min-width: 0; padding: 0 2px; border: 0; border-right: 2px solid white; border-radius: 3px; background: var(--phase-color); color: white; overflow: hidden; font-size: 10px; white-space: nowrap; }
+.review-segment:hover, .review-segment:focus-visible { filter: brightness(1.12); outline: 2px solid #1b2c46; outline-offset: 2px; z-index: 2; background: var(--phase-color); }
+.review-playhead { position: absolute; height: calc(100% + 8px); top: -4px; width: 2px; background: #17253f; pointer-events: none; z-index: 3; box-shadow: 0 0 0 1px #fff9; }
+.review-legend { display: flex; flex-wrap: wrap; gap: 6px 15px; margin: 15px 0; font-size: 10px; color: #65768d; }
+.review-legend span::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--phase-color); border-radius: 2px; margin-right: 5px; }
+.review-shortcuts { font-size: 10px; }
+.review-inspector { padding: 20px; background: #f7f9fc; border: 1px solid var(--border); border-radius: 12px; }
+.review-inspector .eyebrow { color: #8291a7; font-size: 10px; letter-spacing: .13em; margin: 0 0 18px; }
+.review-inspector h3 { font-size: 22px; margin: 14px 0 10px; }
+.review-inspector h3 small { color: #94a0b1; font-size: 13px; font-weight: 400; }
+.review-instruction { font-size: 13px; line-height: 1.8; padding-bottom: 15px; border-bottom: 1px solid var(--border); }
+.review-inspector dl { margin: 18px 0; }
+.review-inspector dt { font-size: 10px; color: #8390a1; margin-top: 14px; }
+.review-inspector dd { margin: 3px 0; font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.review-inspector .hint { font-size: 10px; margin-top: 18px; }
+.review-phase { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 5px; color: var(--phase-color); background: color-mix(in srgb, var(--phase-color) 11%, white); font-size: 11px; font-weight: 600; }
+.review-table-scroll { max-height: 450px; overflow: auto; }
+.review-table-scroll thead { position: sticky; top: 0; background: white; z-index: 1; }
+.review-table-scroll td:first-child { width: 75px; }
+.review-table-scroll td:nth-child(2) { width: 190px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.review-table-scroll td p { margin: 6px 0 0; }
+.review-coarse-details { margin-top: 22px; }
+.review-coarse-details summary { cursor: pointer; color: #617794; font-size: 12px; }
+.review-tools h3 { margin-top: 0; }
+#review-export-download { display: inline-block; padding: 8px 14px; background: #edf3ff; color: #245bd1; border-radius: 6px; }
+@media (max-width: 1250px) { .review-workspace { grid-template-columns: minmax(0, 1fr) 245px; gap: 15px; } .review-inspector { padding: 15px; } }
+@media (max-width: 900px) { .review-workspace { grid-template-columns: 1fr; } .review-inspector dl { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 16px; } .review-inspector dt { margin: 0; } .review-picker { grid-template-columns: 1fr auto; } .review-picker > label:last-child { grid-column: 1 / -1; } }
+@media (max-width: 550px) { .review-summary { grid-template-columns: 1fr 1fr; } .review-videos video { height: 110px; } .review-transport .checkbox { margin-left: 0; } .annotation-settings { padding: 15px; } .review-clock { gap: 6px; } #review-sync { margin-left: 0; } }

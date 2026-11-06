@@ -3,13 +3,13 @@
   "files": [
     {
       "path": ".gitignore",
-      "bytes": 228,
-      "sha256": "c491f9635f76ced555947a2bf7212a2b061bbeb392aae9c0b07282f36f9fea7e"
+      "bytes": 251,
+      "sha256": "d810f983be65046c79fdd77119d23a8e52a307fe133f7fecadac791344a93363"
     },
     {
       "path": "README.md",
-      "bytes": 71445,
-      "sha256": "ce52783d4b0ae30653e3fd1ac3090920c38ac240cb74d541da838e9720974c86"
+      "bytes": 71737,
+      "sha256": "16fb2938979e75cae4fceae763f82927201003c619f80d737f1d178fa5c8cab7"
     },
     {
       "path": "configs/capture.daily.yaml",
@@ -87,9 +87,14 @@
       "sha256": "ec6246e3bad0f9595015e3b17719df1fe92dca51ddc89d0b840f5457990236c6"
     },
     {
+      "path": "docs/annotation-review.md",
+      "bytes": 5131,
+      "sha256": "59737c798730452f14381051ebb3bcf352e4c17cc273876ac738b5d613527332"
+    },
+    {
       "path": "docs/annotation.md",
-      "bytes": 16444,
-      "sha256": "10aced1cf36a3521cb0cf5009a4a1a648564bccce5154ec531c93c4f2eaa7721"
+      "bytes": 16619,
+      "sha256": "e442814c084c8ec4e5e096dab857e9e18ff48ac297c7ddb872ac8333b815dd1b"
     },
     {
       "path": "docs/architecture.md",
@@ -268,8 +273,8 @@
     },
     {
       "path": "pyproject.toml",
-      "bytes": 1034,
-      "sha256": "42ea260e17a5a56e1b004a7ff89bbf42ba3acc5ee0f51dbfce960b19484029e9"
+      "bytes": 1124,
+      "sha256": "84292b48814d588e8d484d6323dcc9d2501e3cdb736b9c2a4603feb682d239b8"
     },
     {
       "path": "requirements-lock.txt",
@@ -558,8 +563,8 @@
     },
     {
       "path": "src/convest/annotation/preview.py",
-      "bytes": 2059,
-      "sha256": "caea53cc7f08b566d10e47dd1410117f0aa8d697f49e9e731693ea7be57931bd"
+      "bytes": 2750,
+      "sha256": "4a4e8c6224fb582396a68177e464ee918675b94e442ef301c8dfe6398fe56dc5"
     },
     {
       "path": "src/convest/annotation/prompts.py",
@@ -585,6 +590,11 @@
       "path": "src/convest/annotation/views.py",
       "bytes": 1118,
       "sha256": "1b758085ea4ffcc2a900921a97c58a5a04f4d4c2d75495a0c8921b6eb80dc0ba"
+    },
+    {
+      "path": "src/convest/annotation/visualization.py",
+      "bytes": 10697,
+      "sha256": "59769191da9b3cc91d1b059bb479fe10a7b8b662a104eb8b18f95aa5290e1cde"
     },
     {
       "path": "src/convest/annotation/workflow.py",
@@ -698,13 +708,13 @@
     },
     {
       "path": "src/convest/gui/server.py",
-      "bytes": 9588,
-      "sha256": "7d4c27169593f191c5ccaabfcd44918f1a9123593a1e06d7b3857194ef694445"
+      "bytes": 10763,
+      "sha256": "4d6fcfefb47bad342155c7776ade5ad090cd24e6cbdb67c13c594af18f33b110"
     },
     {
       "path": "src/convest/gui/static/annotation.js",
-      "bytes": 10419,
-      "sha256": "8b1bb8fd822c827fef5ce81de7671b7b2bc445166567f8b934a7e416fecfdc91"
+      "bytes": 6970,
+      "sha256": "213bb87ceb9a9a7b6273b69cc5dfb71ef4de2984c474a124e3d5c1b0d87268c8"
     },
     {
       "path": "src/convest/gui/static/app.js",
@@ -718,13 +728,18 @@
     },
     {
       "path": "src/convest/gui/static/index.html",
-      "bytes": 21986,
-      "sha256": "d988f543a8837ff79b91092e8fcbdac45bf1971992aed24a19572a2426c6af9a"
+      "bytes": 26243,
+      "sha256": "093d17b34b3bdaeabc5ac24a955a3c2800e003460650731a1c0ce3ddd20dc89b"
+    },
+    {
+      "path": "src/convest/gui/static/review.js",
+      "bytes": 15719,
+      "sha256": "38a11ab4ed62c473c7734a4fda2835f74882eb8ac4815b6b38d481ff1d599889"
     },
     {
       "path": "src/convest/gui/static/style.css",
-      "bytes": 20901,
-      "sha256": "fa6e75f0d3caddfc80ef5ef7fafb7a65240dc2dcb510c65d90438a9e691ef56d"
+      "bytes": 26949,
+      "sha256": "baccc73fc00c69309bbfe2ea158f92599eedab5e0edc4764228d21541dd229ae"
     },
     {
       "path": "src/convest/gui/transport.py",
@@ -970,6 +985,11 @@
       "path": "tests/test_annotation_multiview.py",
       "bytes": 8542,
       "sha256": "f517e8f0cb633a8994a6fe5fc93a7229c26e971e73547a7208f390b29f3a3549"
+    },
+    {
+      "path": "tests/test_annotation_visualization.py",
+      "bytes": 8730,
+      "sha256": "6cc41595bbabbdb6a44ce760550da05b50f2d1802aaf80f2039f1a880e2b775f"
     },
     {
       "path": "tests/test_annotation_workflow.py",

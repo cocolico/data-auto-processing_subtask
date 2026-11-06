@@ -47,7 +47,17 @@ class Handler(BaseHTTPRequestHandler):
                 from convest.annotation.preview import video
                 path=video(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0],query.get('camera',[''])[0])
                 return self.video(path)
-            files={'/':'index.html','/app.js':'app.js','/annotation.js':'annotation.js','/style.css':'style.css','/brand-logo.png':'brand-logo.png'}
+            if route.path in ('/api/annotation/viewer-status','/api/annotation/viewer-file'):
+                from convest.annotation import visualization
+                spec=self.server.manager.annotation_spec(query.get('task',[''])[0])
+                identity=query.get('job',[''])[0];format=query.get('format',[''])[0]
+                if route.path.endswith('viewer-status'):
+                    return self.send(visualization.status(spec,identity,format))
+                if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):
+                    return self.send({'error':'预览令牌无效'},403)
+                path=visualization.artifact(spec,identity,format)
+                return self.video(path,mime='application/octet-stream',download=f'annotation.{format}')
+            files={'/':'index.html','/app.js':'app.js','/annotation.js':'annotation.js','/review.js':'review.js','/style.css':'style.css','/brand-logo.png':'brand-logo.png'}
             if route.path in files:
                 file=STATIC/files[route.path]
                 mime={'html':'text/html','js':'text/javascript','css':'text/css','png':'image/png'}[file.suffix[1:]]
@@ -68,6 +78,9 @@ class Handler(BaseHTTPRequestHandler):
             if route=='/api/save':return self.send({'settings':m.save(body)})
             if route=='/api/resume':
                 m.resume_on_open();return self.send(m.snapshot())
+            if route=='/api/annotation/viewer-export':
+                from convest.annotation.visualization import start
+                return self.send(start(m.annotation_spec(body['task']),body['job'],body['format']))
             if route=='/api/annotation/key':
                 from convest.annotation import credentials
                 return self.send(credentials.save(m.root,body.get('key')))
@@ -108,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'error':'Not found'},404)
         except Exception as e:self.send({'error':str(e)},400)
 
-    def video(self,path):
+    def video(self,path,mime='video/mp4',download=None):
         size=path.stat().st_size;start=0;end=size-1
         header=self.headers.get('Range')
         if header:
@@ -121,7 +134,9 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<=start<=end<size:
                 self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.end_headers();return
         self.send_response(206 if header else 200)
-        self.send_header('Content-Type','video/mp4');self.send_header('Accept-Ranges','bytes')
+        self.send_header('Content-Type',mime);
+        if download:self.send_header('Content-Disposition',f'attachment; filename="{download}"')
+        self.send_header('Accept-Ranges','bytes')
         self.send_header('Content-Length',str(end-start+1));self.send_header('Cache-Control','no-store')
         self.send_header('X-Content-Type-Options','nosniff')
         if header:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')

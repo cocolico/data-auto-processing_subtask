@@ -5,6 +5,7 @@ window.annotationUI = (() => {
   const title = x => labels[x] || x || "尚未开始";
   const run = async action => { try { await action(); } catch (e) { toast(e.message, true); } };
   function navigate(name) {
+    if(name!=="preview")window.reviewUI.pause();
     view = name;
     for (const key of ["workflow","annotation","preview","resources"]) $("view-"+key).hidden = key !== name;
     document.querySelectorAll("[data-view]").forEach(b => {b.classList.toggle("active",b.dataset.view===name);b.setAttribute("aria-current",b.dataset.view===name?"page":"false");});
@@ -37,41 +38,21 @@ window.annotationUI = (() => {
       const previous=$("annotation-preview-job").value;signature=sig;
       $("annotation-preview-job").innerHTML=previewable.map(j=>`<option value="${esc(j.id)}">${esc(title(j.state))} · ${esc(j.route)} · Episode ${j.source_ep} · ${esc(j.recording_id)}</option>`).join("");
       if(previewable.some(j=>j.id===previous)) $("annotation-preview-job").value=previous;
-      if(previewTask && previewTask!==selected) {preview=null;$("annotation-video").removeAttribute("src");$("annotation-video").load();$("annotation-steps").replaceChildren();$("annotation-coarse-steps").replaceChildren();$("annotation-coarse-info").textContent="";$("annotation-camera").replaceChildren();$("annotation-preview-info").textContent="当前任务已切换，请重新选择结果。";}
+      if(previewTask && previewTask!==selected) {preview=null;window.reviewUI.clear();$("annotation-preview-info").textContent="当前任务已切换，请重新选择结果。";}
     }
     const c=snapshot.credential||{};
     $("annotation-key-state").textContent=c.configured ? "已配置 · "+c.masked : "尚未配置 API Key";
     $("annotation-resources").textContent=`本机可用空间：${bytes(snapshot.disk.free)} / ${bytes(snapshot.disk.total)}。低于 8 GiB 时暂停新转换与标注；正式导出还需要足够的成品空间。202：${draft.data_server.host}:${draft.data_server.port}；训练服务器：${draft.training_server.host}:${draft.training_server.port}。`;
     $("annotation-load-preview").disabled=!previewable.length;
   }
-  function videoSource(time=0) {
-    if(!preview)return;
-    const v=$("annotation-video");
-    const query=new URLSearchParams({task:previewTask,job:preview.id,camera:$("annotation-camera").value,token});
-    v.onloadedmetadata=()=>{v.currentTime=Math.min(time,v.duration||time);};
-    v.src="/api/annotation/video?"+query;
-  }
   async function loadPreview() {
     const id=$("annotation-preview-job").value;if(!id)return;
-    const task=selected;
-    const data=await api("/api/annotation/preview?"+new URLSearchParams({task,job:id}));
-    if(task!==selected)return;
-    preview=data;previewTask=task;
-    $("annotation-camera").innerHTML=data.cameras.filter(c=>/^observation\.images\.cam[012]$/.test(c)).map(c=>`<option value="${esc(c)}">${esc(c)}${c.endsWith("cam0")?" · 外部总览":c.endsWith("cam1")?" · 右手腕":" · 左手腕"}</option>`).join("");
-    $("annotation-camera").value="observation.images.cam0";
-    $("annotation-preview-info").textContent=`${data.frames} 帧 · ${data.fps} fps · ${data.steps.length} 个自然步骤 · ${data.model}`+(data.video_available?"":" · 本地视频已释放，文字结果仍可查看");
-    const coarse=data.granularity?.coarse_steps||[];
-    $("annotation-coarse-info").textContent=`${coarse.length} 个粗阶段；相邻同类细动作合并。`+(data.granularity?.excluded_intervals.length?"低位静止或旧协议未映射区间仍保留在细粒度层。":"");
-    $("annotation-coarse-steps").innerHTML=coarse.map((s,i)=>`<tr data-coarse="${i}"><td><button data-seek="${s.start_frame/data.fps}">${i+1}</button></td><td>${(s.start_frame/data.fps).toFixed(2)}–${(s.end_frame/data.fps).toFixed(2)}</td><td>${esc(s.text_zh)}<br><small>细步骤 ${s.fine_step_indices.map(j=>j+1).join("、")}</small></td></tr>`).join("");
-    $("annotation-coarse-steps").querySelectorAll("[data-seek]").forEach(b=>b.onclick=()=>{$("annotation-video").currentTime=Number(b.dataset.seek);});
-    $("annotation-steps").innerHTML=data.steps.map((s,i)=>{
-      const decision=s.decision ? `决策 ${s.decision.choice}；目标 ${s.decision.target_id||"未确定"}` : "";
-      const condition=s.return_condition ? `右手拇指/食指左侧番茄数：${s.return_condition.left_side_count ?? "未知"}` : "";
-      const details=[s.phase, s.target_id, decision, condition].filter(Boolean).join(" · ");
-      return `<tr data-step="${i}"><td><button data-seek="${s.start_frame/data.fps}">${i+1}</button></td><td>${(s.start_frame/data.fps).toFixed(2)}–${(s.end_frame/data.fps).toFixed(2)}</td><td>${esc(s.text)}${details?`<br><small>${esc(details)}</small>`:""}</td></tr>`;
-    }).join("");
-    $("annotation-steps").querySelectorAll("[data-seek]").forEach(b=>b.onclick=()=>{$("annotation-video").currentTime=Number(b.dataset.seek);});
-    if(data.video_available)videoSource();else {$("annotation-video").removeAttribute("src");$("annotation-video").load();}
+    const task=selected, button=$("annotation-load-preview");button.disabled=true;
+    try {
+      const data=await api("/api/annotation/preview?"+new URLSearchParams({task,job:id}));
+      if(task!==selected||id!==$("annotation-preview-job").value)return;
+      preview=data;previewTask=task;window.reviewUI.load(data,task);
+    } finally { render(); }
   }
   function init() {
     document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>navigate(b.dataset.view));
@@ -89,13 +70,7 @@ window.annotationUI = (() => {
       try {const result=await api("/api/annotation/check",{});$("annotation-connection-result").textContent=result.message;}finally{b.disabled=false;}
     });
     $("annotation-load-preview").onclick=()=>run(loadPreview);
-    $("annotation-camera").onchange=()=>videoSource($("annotation-video").currentTime||0);
-    $("annotation-video").ontimeupdate=()=>{
-      if(!preview)return;const frame=$("annotation-video").currentTime*preview.fps;
-      $("annotation-coarse-steps").querySelectorAll("[data-coarse]").forEach(row=>{const s=preview.granularity.coarse_steps[Number(row.dataset.coarse)];row.classList.toggle("current-step",s.start_frame<=frame&&frame<s.end_frame);});
-      $("annotation-steps").querySelectorAll("[data-step]").forEach(row=>{const s=preview.steps[Number(row.dataset.step)];row.classList.toggle("current-step",s.start_frame<=frame&&frame<s.end_frame);});
-    };
-    $("annotation-video").onerror=()=>{$("annotation-preview-info").textContent="视频不可用或本地副本已释放；步骤文字保留。可在工作流日志查看详情。";};
+    window.reviewUI.init();
     $("annotation-connections").onclick=()=>navigate("workflow");
     render();
   }
