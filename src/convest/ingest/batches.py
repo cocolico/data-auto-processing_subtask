@@ -33,6 +33,8 @@ class BatchPublisher:
         self.route=route;self.fingerprint=fingerprint
         self.output=Path(route['output']);self.store=self.output/'.ingest'
         self.duration_ns=route['batch_hours']*3600*10**9
+        limit=route.get('max_batch_sources')
+        if limit is not None and (type(limit) is not int or limit<1):raise ValueError('Batch source limit must be a positive integer')
 
     def _owner(self):
         return {'owner':OWNER,'layout':'timed-batches-v1','route':self.route['id'],
@@ -170,11 +172,16 @@ class BatchPublisher:
 
     def _seal_due(self,catalog,now):
         for batch in catalog['batches']:
-            if batch['state']!='active' or batch.get('deadline_ns') is None or now<batch['deadline_ns']:continue
+            if batch['state']!='active':continue
+            limit=batch.get('max_sources')
+            full=limit is not None and batch.get('source_count',0)>=limit
+            # Count batches close at the count boundary or explicit directory end.
+            due=limit is None and batch.get('deadline_ns') is not None and now>=batch['deadline_ns']
+            if not full and not due:continue
             try:result=self._verify_seal(batch)
             except Exception as exc:
                 batch['seal_error']=f'{type(exc).__name__}: {exc}';self._save(catalog);raise
-            batch.update(state='sealed',sealed_ns=max(now,result['checked_ns']),verification=result)
+            batch.update(state='sealed',sealed_ns=max(now,result['checked_ns']),verification=result,seal_reason='source_limit' if full else 'time_limit')
             batch.pop('seal_error',None);self._save(catalog)
 
     def published(self,now_ns=None):
@@ -192,7 +199,7 @@ class BatchPublisher:
             for batch in catalog['batches']:
                 if batch['state']!='active' or not batch.get('name'):continue
                 result=self._verify_seal(batch)
-                batch.update(state='sealed',sealed_ns=time.time_ns(),verification=result)
+                batch.update(state='sealed',sealed_ns=time.time_ns(),verification=result,seal_reason='directory_complete')
                 batch.pop('seal_error',None)
                 self._save(catalog)
 
@@ -221,6 +228,7 @@ class BatchPublisher:
             if batch is None:
                 batch={'id':f"batch-{len(catalog['batches'])+1:06d}",'state':'active','opened_ns':None,'name':None,
                        'name_format':self.route.get('batch_name_format','range-v1')}
+                if self.route.get('max_batch_sources') is not None:batch['max_sources']=self.route['max_batch_sources']
                 catalog['batches'].append(batch);self._save(catalog)
             self._check_alias(self._range([*batch.get('sources',[]),episode],name_format=batch.get('name_format','range-v1')),batch)
             root=self._publisher(batch).publish(job_dataset,proof,episode,audit_dir,precommit)

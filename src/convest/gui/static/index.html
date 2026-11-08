@@ -419,7 +419,7 @@
       </section>
       <section class="card annotation-settings">
         <h2>标注进度</h2><p id="annotation-progress" class="hint"></p>
-        <div class="table-scroll"><table><thead><tr><th>分组 / 录制</th><th>Episode</th><th>状态</th><th>请求次数</th><th>用量</th><th>详情</th></tr></thead><tbody id="annotation-jobs"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>分组 / 录制</th><th>原始录制</th><th>状态</th><th>请求次数</th><th>用量</th><th>详情</th></tr></thead><tbody id="annotation-jobs"></tbody></table></div>
         <div class="actions"><button id="annotation-finish-batch">目录完成后进入审核</button><button id="annotation-release" class="primary">审核完成，继续后续处理</button><button id="annotation-next-cycle">继续接收下一批</button></div><p id="annotation-cycle-status" role="status"></p><p id="annotation-directory-progress" role="status"></p><div id="annotation-input-errors"></div><label id="annotation-ack-errors-label" class="checkbox" hidden><input type="checkbox" id="annotation-ack-errors">我已查看输入异常清单，同意排除这些异常录制并保留原始数据</label><h3>正式数据批次</h3><div id="annotation-batches"></div>
       </section>
     </main>
@@ -429,7 +429,7 @@
         <div class="review-picker"><label>标注结果<select id="annotation-preview-job"></select></label><button id="annotation-load-preview" class="primary">打开结果</button><label>数据版本<select id="annotation-preview-variant"><option value="draft">原始标注 / 人工审核</option><option value="reviewed">审核后的完整 LeRobot</option><option value="normal">normal</option><option value="speedup">speedup</option></select></label><label>突出显示<select id="annotation-camera"><option value="observation.images.cam0">cam0 · 总览</option><option value="observation.images.cam1">cam1 · 右手腕</option><option value="observation.images.cam2">cam2 · 左手腕</option></select></label></div>
         <p id="annotation-preview-info" class="hint" role="status">选择已标注的 Episode，三路视频将按同一时间轴播放。</p>
         <div class="actions review-edit-actions"><button id="review-edit-start" disabled>开启修改模式</button><button id="review-edit-stop" disabled>停止修改模式</button><button id="review-import" disabled>导入标注 JSON</button><input id="review-import-file" type="file" accept=".json,application/json" hidden><span id="review-edit-status" role="status">打开原始标注后可保存正式审核草稿。</span></div>
-        <div class="actions"><button id="review-initialize" disabled>建立七阶段人工草稿</button><button id="review-undo" disabled>撤销边界修改</button><button id="review-approve" class="primary" disabled>本条审核通过</button><input id="review-reject-reason" placeholder="真实缺少阶段等不合格原因" aria-label="不合格原因"><button id="review-reject" disabled>标记不合格</button><button id="review-reopen" disabled>撤回审核，继续修改</button></div><div id="review-summary" class="review-summary"></div>
+        <div class="actions"><button id="review-initialize" disabled>建立七阶段人工草稿</button><button id="review-undo" disabled>撤销边界修改</button><button id="review-approve" class="primary" disabled>本条审核通过</button><input id="review-reject-reason" placeholder="真实缺少阶段等不合格原因" aria-label="不合格原因"><button id="review-reject" disabled>标记不合格</button><button id="review-reopen" disabled>撤回审核，继续修改</button></div><p id="review-storage-path" class="hint" style="overflow-wrap:anywhere"></p><div id="review-summary" class="review-summary"></div>
         <div class="review-workspace">
           <div class="review-stage">
             <div class="review-videos" id="review-videos">

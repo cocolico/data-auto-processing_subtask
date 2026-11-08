@@ -336,6 +336,9 @@ def snapshot(spec):
     with database(spec) as db:
         episodes=[dict(r) for r in db.execute('SELECT id,route,batch_id,recording_id,source_ep,state,runs,result_failures,unknown_failures,next_ns,error,usage,revision,reviewed_ns,updated_ns FROM episodes ORDER BY updated_ns DESC')]
         batches=[dict(r) for r in db.execute('SELECT id,route,batch_id,state,output,error FROM batches ORDER BY updated_ns DESC')]
+    from .origins import recording_names,describe
+    names=recording_names(spec)
+    for episode in episodes:episode.update(describe(episode['route'],episode['recording_id'],names))
     root=Path(spec['annotation']['root'])
     from . import directory_round
     return {'directory':directory_round.progress(spec),'enabled':True,'episodes':episodes,'batches':batches,'paused':paused(spec),'blocked':blocked(spec),

@@ -80,6 +80,11 @@ def describe(spec,identity,variant='draft'):
             'source_frame_index':mapping,'can_reopen':variant=='draft' and state=='approved' and not frozen and not released(spec),
             'viewer_sdks':{'rrd':find_spec('rerun') is not None,'mcap':find_spec('foxglove') is not None},
             'video_available':(source/path_for(info,ep,video_key='observation.images.cam0')).is_file()}
+    from .origins import recording_names,describe as describe_origin
+    result.update(describe_origin(payload.get('route',''),payload['recording_id'],recording_names(spec)))
+    if spec.get('annotation',{}).get('root'):
+        storage=Path(spec['annotation']['root'])
+        result['review_storage']={'database':str(storage/'queue.sqlite3'),'revisions':str(storage/'reviews'/identity),'datasets':str(storage/'datasets')}
     if not staged:
         from .compact import project
         result['steps']=project(labels)

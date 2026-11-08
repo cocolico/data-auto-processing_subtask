@@ -25,19 +25,19 @@ window.annotationUI = (() => {
     $("annotation-notice").textContent = a.blocked?.error || (dirty ? "有未保存设置：先停止当前任务，再保存设置并开始。" : "标注关闭时，Key 和额度不会影响原有清洗、转换及上传。");
     const progress = a.progress || {};
     const completed = (a.episodes||[]).filter(j=>["completed","approved"].includes(j.state));
-    const previewable = (a.episodes||[]).filter(j=>["completed","needs_review","reviewing","approved","rejected"].includes(j.state));
+    const previewable = (a.episodes||[]).filter(j=>["completed","needs_review","reviewing","approved","rejected"].includes(j.state)).sort((x,y)=>x.route.localeCompare(y.route)||(x.source_episode_number??Infinity)-(y.source_episode_number??Infinity));
     const trials = snapshot.annotation_trials || [];
     $("annotation-progress").textContent = `共 ${a.episodes?.length||0} 条 · 成功 ${completed.length} 条` + (progress.id ? ` · 最近阶段：${title(progress.phase)}` : "") + (a.paused ? " · 当前请求结束后暂停，不再发送新请求" : "");
     $("annotation-jobs").innerHTML = (a.episodes||[]).map(j=>{
       let usage={};try {usage=JSON.parse(j.usage||"{}");}catch (_) {}
       const retry=j.next_ns>Date.now()*1e6 ? `；下次尝试 ${new Date(j.next_ns/1e6).toLocaleTimeString()}` : "";
-      return `<tr><td>${esc(j.route)} / ${esc(j.recording_id)}</td><td>${j.source_ep}</td><td>${esc(title(j.state))}</td><td>${j.runs}</td><td>${usage.total_tokens == null ? "—" : esc(usage.total_tokens)+" tokens"}</td><td>${esc((j.error||"")+retry)}</td></tr>`;
+      return `<tr><td>${esc(j.route)}</td><td>${esc(j.source_episode||"原始编号待确认")}</td><td>${esc(title(j.state))}</td><td>${j.runs}</td><td>${usage.total_tokens == null ? "—" : esc(usage.total_tokens)+" tokens"}</td><td>${esc((j.error||"")+retry)}</td></tr>`;
     }).join("") || '<tr><td colspan="6">尚无标注记录。保存并启动启用标注的任务后，自动接收转换完成的 Episode。</td></tr>';
     $("annotation-batches").innerHTML = (a.batches||[]).map(b=>`<p><strong>${esc(b.route)} / ${esc(b.batch_id)}</strong> · ${esc(title(b.state))}<br><code>${esc(b.output||b.error||"等待封存与标注完成")}</code></p>`).join("") || '<p class="hint">尚无封存后的标注成品。</p>';
-    const sig=selected+":"+previewable.map(j=>j.id+":"+j.state+":"+j.revision).join(",")+":"+trials.map(t=>t.id+":"+t.status).join(",");
+    const sig=selected+":"+previewable.map(j=>j.id+":"+j.state+":"+j.revision+":"+j.source_episode).join(",")+":"+trials.map(t=>t.id+":"+t.status).join(",");
     if(sig!==signature) {
       const previous=$("annotation-preview-job").value;signature=sig;
-      $("annotation-preview-job").innerHTML=previewable.map(j=>`<option value="${esc(j.id)}">${esc(title(j.state))} · ${esc(j.route)} · Episode ${j.source_ep} · ${esc(j.recording_id)}</option>`).join("")+
+      $("annotation-preview-job").innerHTML=previewable.map(j=>`<option value="${esc(j.id)}">${esc(title(j.state))} · ${esc(j.source_label||j.route+" / 原始编号待确认")}</option>`).join("")+
         trials.map(t=>`<option value="trial:${esc(t.id)}">单独测试草稿 · Episode ${t.episode_index} · ${esc(t.id)}</option>`).join("");
       if(previewable.some(j=>j.id===previous)||trials.some(t=>"trial:"+t.id===previous)) $("annotation-preview-job").value=previous;
       if(previewTask && previewTask!==selected) {preview=null;window.reviewUI.clear();$("annotation-preview-info").textContent="当前任务已切换，请重新选择结果。";}

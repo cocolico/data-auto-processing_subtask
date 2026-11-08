@@ -102,9 +102,10 @@ window.reviewUI = (() => {
   }
   function load(value,taskId){
     clear();data=structuredClone(value);task=taskId;const current=epoch;
-    $("annotation-preview-info").textContent=`${data.variant||"draft"} · Episode ${data.episode_index} · ${data.recording_id} · ${data.review_state||"历史结果"} · 版本 ${data.revision||0}`;
+    $("annotation-preview-info").textContent=`${data.variant||"draft"} · ${data.source_label||"原始编号待确认"} · ${data.review_state||"历史结果"} · 版本 ${data.revision||0}`;
     $("review-summary").innerHTML=[["录制时长",clock(data.frames/data.fps)],["动作阶段",data.steps.length+" / 7"],["数据版本",data.variant||"draft"],["视频时间轴",`${data.fps} fps · ${data.frames} 帧`]].map(([k,v])=>`<div><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join("");
     $("review-filter").innerHTML='<option value="">全部阶段</option>'+data.steps.map((s,i)=>`<option value="${esc(s.phase)}">${esc(name(s,i))}</option>`).join("");
+    $("review-storage-path").textContent=data.review_storage?`人工修改保存在：${data.review_storage.revisions}（正式审核队列同步保存；整轮放行后生成 LeRobot 成品）`:"";
     $("review-scrubber").max=data.frames-1;$("review-scrubber").disabled=false;
     videoIds.forEach((id,i)=>{const v=$(id),key="observation.images.cam"+i;
       if(!data.camera_status?.[key]?.available){$("review-status-cam"+i).textContent="视频不可用";return;}
@@ -128,7 +129,7 @@ window.reviewUI = (() => {
     if(expected!==epoch)return;
     data.revision=result.revision;data.review_state=result.state;modified=false;
     if(action!=="save"){data.readonly=action!=="reopen";data.can_reopen=action==="approve";editing=action==="reopen";}
-    $("annotation-preview-info").textContent=`${data.variant} · Episode ${data.episode_index} · ${data.recording_id} · ${data.review_state} · 版本 ${data.revision}`;
+    $("annotation-preview-info").textContent=`${data.variant} · ${data.source_label||"原始编号待确认"} · ${data.review_state} · 版本 ${data.revision}`;
     message(action==="reopen"?"已撤回审核并创建新草稿版本。请重新保存并审核。":action==="save"?"草稿已保存到正式审核队列，尚未放行。":action==="approve"?"本条审核通过并冻结。全部条目处理后，点击“审核完成，继续后续处理”。":"已标记不合格并保留数据。");
     draw();await refresh();
   }
@@ -154,7 +155,7 @@ window.reviewUI = (() => {
     $("review-undo").onclick=()=>{if(history.length){data.steps=history.pop();modified=true;draw();}};
     $("review-initialize").onclick=()=>{if(!data||data.readonly)return;remember();data.steps=categories.map(([phase,_,text],i)=>({stage_index:i,phase,text,start_frame:Math.floor(i*data.frames/7),end_frame:Math.floor((i+1)*data.frames/7)}));editing=true;draw();message("这是均分的人工模板，不是模型识别。必须逐一调整六个边界，并确认真实七阶段齐全。");};
     for(const [id,action] of [["review-save-local","save"],["review-approve","approve"],["review-reject","reject"],["review-reopen","reopen"]])$(id).onclick=async()=>{try{$(id).disabled=true;await submit(action);}catch(e){message(e.message);}finally{controls();}};
-    $("review-export-json").onclick=()=>{if(!data)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download=`episode_${data.episode_index}_${data.variant}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+    $("review-export-json").onclick=()=>{if(!data)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download=`${data.source_label?data.source_label.replaceAll(" / ","_"):"annotations"}_${data.variant}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
     $("review-import").onclick=()=>$("review-import-file").click();$("review-import-file").onchange=async e=>{try{const file=e.target.files[0];if(!file||!data||data.readonly)return;const v=JSON.parse(await file.text());if(v.recording_id!==data.recording_id||v.frames!==data.frames||v.fps!==data.fps||v.episode_index!==data.episode_index||v.variant!==data.variant)throw Error("文件来源或数据版本不匹配");const before=structuredClone(data.steps);remember();data.steps=v.steps;try{valid();}catch(e){data.steps=before;throw e;}editing=true;draw();message("已导入，尚未保存或审核通过。");}catch(e){message(e.message);}finally{e.target.value="";}};
     document.addEventListener("keydown",e=>{if(!data||$("view-preview").hidden||/INPUT|SELECT|TEXTAREA|BUTTON|A/.test(e.target.tagName)||e.ctrlKey||e.metaKey||e.altKey)return;if(e.code==="Space"){e.preventDefault();play();}if(["ArrowLeft","ArrowRight"].includes(e.code)){e.preventDefault();pause();seek(frame()+(e.code==="ArrowRight"?1:-1),true);}});
     document.addEventListener("visibilitychange",()=>{if(document.hidden)pause();});controls();
