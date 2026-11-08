@@ -184,6 +184,18 @@ class BatchPublisher:
             self._seal_due(catalog,time.time_ns() if now_ns is None else now_ns)
             return index
 
+    def seal_active(self):
+        """Explicit local review boundary, without changing the 24-hour ownership contract."""
+        if not self._exists():return
+        with self._locked():
+            catalog=self._catalog();self._sync(catalog)
+            for batch in catalog['batches']:
+                if batch['state']!='active' or not batch.get('name'):continue
+                result=self._verify_seal(batch)
+                batch.update(state='sealed',sealed_ns=time.time_ns(),verification=result)
+                batch.pop('seal_error',None)
+                self._save(catalog)
+
     def current(self):
         if not self._exists():return None
         with self._locked():

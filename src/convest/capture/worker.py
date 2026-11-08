@@ -147,6 +147,9 @@ def scan(cfg, queue, now_ns=None, should_stop=lambda:False):
             errors[route['id']]='Input directory missing or symlink'
             continue
         bags=sorted((p for p in source.iterdir() if EPISODE.fullmatch(p.name) and p.is_dir() and not p.is_symlink()),key=lambda p:int(p.name[7:]))
+        if 'round_episodes' in cfg:
+            allowed=set(cfg['round_episodes'].get(route['id'],[]))
+            bags=[p for p in bags if p.name in allowed]
         skipped=queue.initialize_history(route['id'],[p.name for p in bags],route['history'],now)
         for bag in bags:
             if bag.name in skipped:

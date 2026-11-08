@@ -32,6 +32,7 @@ def projection(info, robot):
     fields = fields | {flag}
     cameras = {f'observation.images.cam{i}' for i in range(3)}
     keep = fields | cameras
+    if 'stage_index' in info['features']:keep=keep|{'stage_index'}
     if not keep <= info['features'].keys():
         raise ValueError('Missing training fields: ' + str(keep - info['features'].keys()))
     result = deepcopy(info)
@@ -115,9 +116,9 @@ def export(source, output, robot):
     dump(output / 'meta/info.json', info)
     for name in ('tasks.jsonl', 'episodes.jsonl'):
         shutil.copyfile(source / 'meta' / name, output / 'meta' / name)
-    from .annotations import FILENAME, validate_dataset
+    from .annotations import filename, validate_dataset
     if validate_dataset(source) is not None:
-        shutil.copyfile(source / 'meta' / FILENAME, output / 'meta' / FILENAME)
+        shutil.copyfile(source / 'meta' / filename(source), output / 'meta' / filename(source))
     stats = stats_for(output, info)
     (output / 'meta/episodes_stats.jsonl').write_text(''.join(json.dumps(s) + '\n' for s in stats))
     dump(output / 'meta/stats.json', aggregate_stats([e['stats'] for e in stats]))

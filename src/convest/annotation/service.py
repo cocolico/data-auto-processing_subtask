@@ -36,7 +36,12 @@ def database(spec):
         next_ns INTEGER DEFAULT 0,error TEXT,usage TEXT,labels TEXT,updated_ns INTEGER);
       CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,route TEXT,batch_id TEXT,
         source TEXT,state TEXT,output TEXT,proof TEXT,error TEXT,updated_ns INTEGER);
-    ''');db.commit()
+    ''')
+    db.execute('BEGIN IMMEDIATE')
+    columns={r[1] for r in db.execute('PRAGMA table_info(episodes)')}
+    for name,definition in [('revision','INTEGER DEFAULT 0'),('review_hash','TEXT'),('reviewed_ns','INTEGER')]:
+        if name not in columns:db.execute('ALTER TABLE episodes ADD COLUMN '+name+' '+definition)
+    db.commit()
     try:yield db
     finally:db.close()
 
@@ -152,7 +157,7 @@ def process_one(spec,db,provider=None):
             # Production requires three synchronized views, including for old
             # pending queue payloads. Injected offline providers may use fixtures.
             videos={'cam0':video}
-            if provider is None:
+            if provider is None or spec['annotation'].get('review_required'):
                 from convest.training.adatempo.lerobot_video import inspect_video
                 try:
                     videos=videos_for(job)
@@ -189,18 +194,21 @@ def process_one(spec,db,provider=None):
             from .compact import project, validate as validate_compact
             labels = project(labels)
             validate_compact(labels)
+            from . import stages
+            if spec['annotation'].get('review_required'):stages.validate(labels,job['length'])
             from .granularity import derive
-            dual = derive(labels, job["fps"], job["length"])
-            durable_json(root/"granularity"/f"{identity}.json", {
+            dual = stages.record(labels,job['fps'],job['length']) if stages.is_stages(labels) else derive(labels, job["fps"], job["length"])
+            durable_json(root/("stages" if stages.is_stages(labels) else "granularity")/f"{identity}.json", {
                 "source": job["source"], "source_episode_index": job["source_ep"],
                 "source_recording_id": job["recording_id"], **dual})
             from .native import validate_segments, validate_ending_motion, validate_action_motion
             validate_segments(labels,job['length'])
             validate_ending_motion(job['source'],job['source_ep'],labels)
             validate_action_motion(job['source'],job['source_ep'],labels)
-            update(db,'episodes',identity,state='completed',labels=json.dumps(labels),usage=json.dumps(usage_record(root,identity)),next_ns=0,error=None)
+            state='needs_review' if spec['annotation'].get('review_required') else 'completed'
+            update(db,'episodes',identity,state=state,labels=json.dumps(labels),usage=json.dumps(usage_record(root,identity)),next_ns=0,error=None)
             (root/'blocked.json').unlink(missing_ok=True)
-            progress(phase='completed',steps=len(labels))
+            progress(phase=state,steps=len(labels))
             return True
         except Exception as exc:
             failure=classify(exc)
@@ -219,6 +227,7 @@ def process_one(spec,db,provider=None):
             else:
                 count=row['result_failures']+1;details['result_failures']=count
                 state='excluded' if count+row['unknown_failures']>job['settings']['retries'] else 'pending'
+            if state=='excluded' and spec['annotation'].get('review_required'):state='needs_review'
             update(db,'episodes',identity,state=state,next_ns=time.time_ns()+int(delay*10**9),**details)
             progress(phase=state,error=message,next_retry_ns=time.time_ns()+int(delay*10**9))
             return True
@@ -229,6 +238,9 @@ def batch_identity(route,batch_id):return digest([route,batch_id])
 
 def build_batches(spec,db):
     if not enabled(spec) or paused(spec) or blocked(spec):return
+    if spec['annotation'].get('review_required'):
+        from .review import released
+        if not released(spec):return
     root=Path(spec['annotation']['root'])
     for route in spec['capture']['routes']:
         path=Path(route['output'])/'.ingest/batches.json'
@@ -240,24 +252,29 @@ def build_batches(spec,db):
             if old and old['state'] in ('completed','empty'):continue
             jobs=db.execute('SELECT * FROM episodes WHERE route=? AND batch_id=? ORDER BY source_ep',
                             (route['id'],batch['id'])).fetchall()
-            if not jobs or any(j['state'] not in TERMINAL for j in jobs):continue
+            terminal={'approved','rejected','history_skipped'} if spec['annotation'].get('review_required') else TERMINAL
+            if not jobs or any(j['state'] not in terminal for j in jobs):continue
             output=root/'datasets'/identity;source=Path(batch['generation'])
             with db:db.execute('''INSERT OR IGNORE INTO batches(id,route,batch_id,source,state,updated_ns)
                 VALUES(?,?,?,?,?,?)''',(identity,route['id'],batch['id'],str(source),'pending',time.time_ns()))
             try:
                 source_info=read_json(source/'meta/info.json')
                 if len(jobs)!=source_info['total_episodes']:continue
-                labels={j['source_ep']:json.loads(j['labels']) for j in jobs if j['state']=='completed'}
+                success='approved' if spec['annotation'].get('review_required') else 'completed'
+                labels={j['source_ep']:json.loads(j['labels']) for j in jobs if j['state']==success}
                 exclusions=[{'source_episode_index':j['source_ep'],'recording_id':j['recording_id'],
-                    'state':j['state'],'reason':j['error']} for j in jobs if j['state']!='completed']
+                    'state':j['state'],'reason':j['error']} for j in jobs if j['state']!=success]
                 if not labels:
                     update(db,'batches',identity,state='empty',proof=json.dumps({'excluded':exclusions}),error='无可交付的成功标注')
                     continue
                 source_data=inspect(source)
                 for job_row in jobs:
-                    if job_row['state']!='completed':continue
+                    if job_row['state']!=success:continue
                     payload=json.loads(job_row['payload'])
                     episode=source_data['episodes'][job_row['source_ep']]
+                    if spec['annotation'].get('review_required'):
+                        from .review import verify_approval
+                        verify_approval(spec,job_row)
                     evidence=read_json(root/'sources'/f"{job_row['id']}.json")
                     if episode['length']!=payload['length']:
                         raise ValueError('封存视频与标注源不一致，保留并停止该批交付')
@@ -317,10 +334,12 @@ def delivery(spec,route,batch_id):
 def snapshot(spec):
     if not enabled(spec):return {'enabled':False,'episodes':[],'batches':[],'paused':False,'blocked':None}
     with database(spec) as db:
-        episodes=[dict(r) for r in db.execute('SELECT id,route,batch_id,recording_id,source_ep,state,runs,result_failures,unknown_failures,next_ns,error,usage,updated_ns FROM episodes ORDER BY updated_ns DESC')]
+        episodes=[dict(r) for r in db.execute('SELECT id,route,batch_id,recording_id,source_ep,state,runs,result_failures,unknown_failures,next_ns,error,usage,revision,reviewed_ns,updated_ns FROM episodes ORDER BY updated_ns DESC')]
         batches=[dict(r) for r in db.execute('SELECT id,route,batch_id,state,output,error FROM batches ORDER BY updated_ns DESC')]
     root=Path(spec['annotation']['root'])
-    return {'enabled':True,'episodes':episodes,'batches':batches,'paused':paused(spec),'blocked':blocked(spec),
+    from . import directory_round
+    return {'directory':directory_round.progress(spec),'enabled':True,'episodes':episodes,'batches':batches,'paused':paused(spec),'blocked':blocked(spec),
+            'review_cycle':read_json(root/'review-cycle.json') if (root/'review-cycle.json').exists() else {'state':'collecting'},
             'progress':read_json(root/'progress.json') if (root/'progress.json').exists() else {}}
 
 

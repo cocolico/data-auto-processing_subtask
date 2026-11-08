@@ -1,113 +1,33 @@
-"""Compact seven-action annotation instructions; coarse stages are derived in code."""
-PROTOCOL_ID = 'tomato-seven-actions-multiview-v8'
+"""Production scheme B: one shared timeline, exactly seven ordered stages."""
+from .stages import CATEGORIES
+PROTOCOL_ID = 'tomato-seven-stages-multiview-v1'
 TOMATO_WORKFLOW_PROMPT = '''Annotate ONE dual-arm Franka robot with {hand} dexterous hands.
-Use visible video actions, not a guessed plan.
+The THREE videos show the SAME synchronized episode, NOT consecutive clips.
+cam0: external overview, image-left is robot LEFT, image-right robot RIGHT.
+cam1: RIGHT wrist, cam2: LEFT wrist. Track hand identity continuously; wrist
+image left/right is not robot left/right. Compare identical timestamps across views.
+All views have the same clip-local zero, dataset FPS and frame count.
+Use cam0 for global movements, plate and basket; wrists for contact, release,
+fruit picking and repositioning. Camera motion alone is not object motion.
 
-SYNCHRONIZED CAMERA VIEWS
-You receive THREE videos of the SAME episode, not three consecutive clips.
-cam0 is the external overview: image-left is the robot's LEFT hand and
-image-right its RIGHT hand. Track identity across the image center.
-cam1 is the RIGHT wrist camera, mounted on the robot's RIGHT hand/arm.
-cam2 is the LEFT wrist camera, mounted on the robot's LEFT hand/arm.
-Camera ownership does not imply that every visible hand belongs to that side.
-Do not infer hand identity from image-left/right in the wrist views, mirror
-those views, or swap cam1 and cam2. A wrist camera moves with its own arm;
-background motion in that view alone is not proof of object or stem rotation.
-All views have the same clip-local zero, FPS, frame count and duration.
-Compare the SAME timestamps across views; never concatenate their durations.
-
-Build one timeline from cam0's global motion, tray locations and hand positions.
-Cross-check cam1 for right-hand truss grasp, release and finger-driven stem
-rotation; cross-check cam2 for left-hand approach, fruit contact, grasp and
-detachment. Use the clearest synchronized view to resolve cam0 occlusion and
-action boundaries, then confirm transport and placement in the overview.
-Check before/during/after contact rather than inferring success from closure.
-Wrist translation, camera motion, occlusion or a disappearing fruit alone do
-not prove detachment, placement or stem rotation. Do not double-count an action
-seen in several views. If views disagree, recheck the same interval and use
-clear visible evidence; leave target_id/decision/count null when unresolved.
-Track fruit identity across cameras only when correspondence is reliable.
-For return_condition.left_side_count, LEFT SIDE always means cam0 image-left
-of the RIGHT thumb/index grasp, never a wrist view's image-left. Wrist views
-may clarify attached fruit only when their correspondence to cam0 is clear.
-Use all views to check END, but cam0 must show BOTH hands low and stationary.
-Output one shared timeline with the unchanged seven-field JSON schema.
-Do not infer successful picking from finger closure, occlusion or an empty hand
-visiting a tray. Label the action being performed without adding an outcome claim.
-
-Use exactly these seven phases and canonical English text labels:
-1. GRASP_CLUSTER
-"Grasp the tomato truss securely with the right hand."
-Include approach, alignment and closure to establish the whole-truss grasp.
-End before lifting. Routine alignment does not include finger-driven stem rotation.
-2. PRESENT_CLUSTER
-"Lift the tomato truss to the center with the right hand."
-From the start of lifting until arrival in the central working position.
-3. APPROACH_AND_GRASP
-"Approach and grasp one tomato with the left hand while holding the truss steady with the right hand."
-From approach to one tomato through alignment and closure, ending before detachment.
-A direct return from the preceding deposit towards the next fruit belongs here.
-4. DETACH_AND_PLACE
-"Detach the tomato and place it in the left tray with the left hand while holding the truss steady with the right hand."
-From the FIRST detaching pull/twist through transport and placement in the left
-tray. Keep this operation together, but keep separate fruits in separate segments.
-5. RETURN_AND_RELEASE
-"Return the tomato truss to the right white plate and release it with the right hand."
-From movement towards the right plate through lowering and finger release,
-ending before movement serving stem rotation. Record return_condition with ONLY
-left_side_count: the attached tomato count on the cam0 image-left side of the
-RIGHT thumb/index grasp at the START of return. The operator's intended count
-is zero, but report the actual nonnegative count or null if obscured. This is
-not the total remaining count. A visible return does not prove the count is zero.
-6. REORIENT_STEM
-"Adjust the tomato truss using the right hand."
-Include purposeful repositioning, regrasping, finger adjustments or rotation of
- the tomato truss to change its position or orientation for subsequent work.
-Rotation is not required. Distinguish adjustment from routine initial grasp
-alignment, lifting to the center and returning to the plate. Use visible hand
-and truss changes, not camera motion alone. End when adjustment finishes;
-choose all boundaries from visible actions, never from a fixed duration.
-A separate subsequent grasp is GRASP_CLUSTER; direct lift can transition to PRESENT_CLUSTER.
-7. END
-"Keep both hands still in their low resting positions."
-Only after BOTH hands are low and stationary through the final interval.
-Movement toward rest belongs to the preceding action. Never force END when
-motion continues to the last frame. END, if present, must be the final segment.
-
-TIMELINE
-Cover every frame exactly once with consecutive non-overlapping intervals.
-Include ordinary settling in the action it completes. Keep each individual
-fruit's approach and detachment/placement distinct; do not collapse repeated
-picks into one fine label. Keep supporting right-hand holding in the same
-sentence as the active left-hand operation. Do not invent extra transition,
-idle or decision phases. Use only the seven phases, with concise canonical text.
-Do not invent hidden events or frame-perfect visual precision from sparse samples.
-
-IDENTITY AND DECISION
-Use stable target_id values T1,T2,... for reliably distinguishable fruit across
-rotation, or null when unknown. Whole-truss actions and END use target_id=null.
-Optional decision is null or an object with exactly choice and target_id.
-choice is CONTINUE_PICK, RETRY_SAME_TARGET, REGRASP, STOP or UNKNOWN.
-A non-null decision describes the START of APPROACH_AND_GRASP,
-RETURN_AND_RELEASE, REORIENT_STEM or END only. STOP is allowed only at END.
-The decision target must agree with the action target when both are specified.
-Use decision=null when no reliable decision can be inferred from the video.
-
-OUTPUT
-Return JSON only with one steps array. Each step has exactly seven keys:
-start_sec, end_sec, phase, text, target_id, decision, return_condition.
-Intervals are clip-local [start_sec,end_sec), from zero to the end of the clip.
-return_condition is null except for RETURN_AND_RELEASE, where it is exactly
-{{"left_side_count":0}} with the actual count or null in place of the example zero.
-Do not output extra fields, explanations or a second coarse timeline: coarse
-labels will be deterministically derived from the fine phases by the program.
-Example shape (not a video observation):
-{{"steps":[{{"start_sec":0,"end_sec":1,"phase":"GRASP_CLUSTER",
-"text":"Grasp the tomato truss securely with the right hand.","target_id":null,
-"decision":null,"return_condition":null}}]}}
+Return ONE timeline with EXACTLY seven stages in the specified order, once each.
+Do not split individual picks or produce coarse/fine tracks. Stages 2 and 6
+include all repeated fruit picks and deposits in that picking round. Stage 1
+includes initial approach and grasp; stage 7 includes final release and settling.
+There is no END or idle stage. Boundaries must follow visible actions, never
+fixed durations or equal spacing. Repositioning need not include rotation.
+Do not invent actions to make the template fit. If a required stage is missing
+or cannot be identified, return {"steps":[]} so the episode requires manual review.
+Only use the canonical phase, zero-based stage_index and exact English text:
+'''.replace('{"steps":[]}', '{{"steps":[]}}')
+TOMATO_WORKFLOW_PROMPT += '\n'.join(
+    f'{i+1}. stage_index={i}; phase={phase}; text="{text}"'
+    for i,(phase,_,text) in enumerate(CATEGORIES))
+TOMATO_WORKFLOW_PROMPT += '''
+Return JSON only: {{"steps":[...]}}. Each step has exactly:
+stage_index, phase, text, start_sec, end_sec.
+Intervals are clip-local [start_sec,end_sec), consecutive and non-overlapping,
+from 0 to the full duration. Each must contain at least one dataset frame.
+Do not infer successful detachment from closure or occlusion alone. Keep
+picking-round labels factual; do not add target IDs, decisions or fruit counts.
 '''
-
-# Insert before OUTPUT so the canonical JSON example remains the final prompt content.
-from .rotation_rules import NINE_SECOND_RULE
-TOMATO_WORKFLOW_PROMPT = TOMATO_WORKFLOW_PROMPT.replace(
-    '\nOUTPUT\n', '\n' + NINE_SECOND_RULE + '\nOUTPUT\n')

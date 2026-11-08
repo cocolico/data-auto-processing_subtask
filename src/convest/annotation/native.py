@@ -109,7 +109,7 @@ def inspect(root):
     metadata_hashes = {name: sha256(root / "meta" / name) for name in
                        ("info.json", "episodes.jsonl", "tasks.jsonl", "episodes_stats.jsonl")}
     from .granularity import FILENAME
-    for name in ("annotation_events.jsonl", FILENAME):
+    for name in ("annotation_events.jsonl", FILENAME, "annotation_stages.jsonl"):
         if (root / "meta" / name).is_file():
             metadata_hashes[name] = sha256(root / "meta" / name)
     identity = {"metadata": metadata_hashes, "artifacts": artifacts}
@@ -276,18 +276,26 @@ def export_dataset(source, destination, labels):
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=False)
     (destination/"meta").mkdir()
     info=projected_info(source,selected)
+    from . import stages
+    staged = stages.is_stages(next(iter(labels.values())))
+    if staged:
+        for ep in selected:stages.validate(labels[ep['episode_index']],ep['length'])
+        info['features']['stage_index']={'dtype':'int64','shape':[1],'names':None}
     tasks=[];vocabulary={};episodes_out=[];stats_out=[];global_offset=0
     for new_ep,episode in enumerate(selected):
-        old_ep=episode["episode_index"];indices=[];names=[]
+        old_ep=episode["episode_index"];indices=[];names=[];stage_ids=[]
         for segment in labels[old_ep]:
             text=segment["text"].strip()
             if text not in vocabulary:
                 vocabulary[text]=len(tasks);tasks.append({"task_index":vocabulary[text],"task":text})
             indices.extend([vocabulary[text]]*(segment["end_frame"]-segment["start_frame"]))
             if text not in names:names.append(text)
+            if staged:stage_ids.extend([segment["stage_index"]]*(segment["end_frame"]-segment["start_frame"]))
         output=artifact(destination,path_for(info,new_ep));output.parent.mkdir(parents=True,exist_ok=True)
         with pq.ParquetFile(artifact(source["root"],path_for(source["info"],old_ep))) as parquet:
-            with pq.ParquetWriter(output,parquet.schema_arrow,compression="zstd") as writer:
+            schema=parquet.schema_arrow
+            if staged:schema=schema.append(pa.field('stage_index',pa.int64()))
+            with pq.ParquetWriter(output,schema,compression="zstd") as writer:
                 offset=0
                 for batch in parquet.iter_batches(batch_size=8,use_threads=False):
                     table=pa.Table.from_batches([batch])
@@ -295,6 +303,7 @@ def export_dataset(source, destination, labels):
                         ("episode_index",[new_ep]*len(batch)),("index",list(range(global_offset+offset,global_offset+offset+len(batch))))]:
                         field=table.schema.field(name)
                         table=table.set_column(table.schema.get_field_index(name),field,pa.array(values,type=field.type))
+                    if staged:table=table.append_column('stage_index',pa.array(stage_ids[offset:offset+len(batch)],type=pa.int64()))
                     writer.write_table(table);offset+=len(batch)
         for camera in source["cameras"]:
             target=artifact(destination,path_for(info,new_ep,video_key=camera));target.parent.mkdir(parents=True,exist_ok=True)
@@ -306,6 +315,7 @@ def export_dataset(source, destination, labels):
         for key,values in [("task_index",indices),("episode_index",[new_ep]*episode["length"]),
                            ("index",list(range(global_offset,global_offset+episode["length"])) )]:
             stat["stats"][key]=task_stats(values)
+        if staged:stat['stats']['stage_index']=task_stats(stage_ids)
         stats_out.append(stat);global_offset+=episode["length"]
     info["total_tasks"]=len(tasks)
     jsonl(destination/"meta/tasks.jsonl",tasks)
@@ -313,7 +323,8 @@ def export_dataset(source, destination, labels):
     jsonl(destination/"meta/episodes_stats.jsonl",stats_out)
     atomic_json(destination/"meta/info.json",info)
     from .granularity import FILENAME, records
-    jsonl(destination/"meta"/FILENAME, records(selected, labels, info["fps"]))
+    if staged:jsonl(destination/'meta'/stages.FILENAME,stages.records(selected,labels,info['fps']))
+    else:jsonl(destination/"meta"/FILENAME, records(selected, labels, info["fps"]))
 
 
 def validate_output(source, output, labels):
@@ -324,24 +335,34 @@ def validate_output(source, output, labels):
     if (Path(output)/"meta/annotation_events.jsonl").exists():
         raise ValueError("Duplicate legacy annotation event file in compact export")
     from .granularity import FILENAME, records, legacy_v2_records
+    from . import stages
+    staged=stages.is_stages(next(iter(labels.values())))
+    if staged:
+        if (Path(output)/'meta'/FILENAME).exists():raise ValueError('Unexpected legacy dual-track annotations')
+        expected_stages=stages.records(selected,labels,source['info']['fps'])
+        if rows(Path(output)/'meta'/stages.FILENAME)!=expected_stages:raise ValueError('Seven-stage metadata changed')
     dual = Path(output)/"meta"/FILENAME
     actual_dual = rows(dual) if dual.is_file() else []
-    expected_dual = records(selected, labels, source["info"]["fps"])
-    legacy_dual = legacy_v2_records(selected, labels, source["info"]["fps"])
+    expected_dual = [] if staged else records(selected, labels, source["info"]["fps"])
+    legacy_dual = [] if staged else legacy_v2_records(selected, labels, source["info"]["fps"])
     if actual_dual not in (expected_dual, legacy_dual):
         raise ValueError("Dual-granularity annotation data missing or changed")
     expected=projected_info(source,selected);expected["total_tasks"]=delivered["info"]["total_tasks"]
+    if staged:expected['features']['stage_index']={'dtype':'int64','shape':[1],'names':None}
     if delivered["info"]!=expected:raise ValueError("Unexpected info changes")
     tasks={r["task_index"]:r["task"] for r in delivered["tasks"]};offset=0
     for new_ep,old in enumerate(selected):
         old_ep=old["episode_index"];count=0;actual_indices=[]
         text=[s["text"].strip() for s in labels[old_ep] for _ in range(s["end_frame"]-s["start_frame"])]
+        expected_ids=([step['stage_index'] for step in labels[old_ep]
+                       for _ in range(step['end_frame']-step['start_frame'])] if staged else None)
         row=delivered["episodes"][new_ep]
         if row["tasks"]!=list(dict.fromkeys(text)):raise ValueError("Episode task list mismatch")
         for k,v in old.items():
             if k not in {"episode_index","task_index","tasks"} and row.get(k)!=v:raise ValueError("Source identity changed")
         with pq.ParquetFile(artifact(source["root"],path_for(source["info"],old_ep))) as a, pq.ParquetFile(artifact(output,path_for(delivered["info"],new_ep))) as b:
-            if not a.schema_arrow.equals(b.schema_arrow,check_metadata=True):raise ValueError("Arrow schema changed")
+            expected_schema=a.schema_arrow.append(pa.field('stage_index',pa.int64())) if staged else a.schema_arrow
+            if not expected_schema.equals(b.schema_arrow,check_metadata=True):raise ValueError("Arrow schema changed")
             for before,after in zip(a.iter_batches(batch_size=8,use_threads=False),b.iter_batches(batch_size=8,use_threads=False)):
                 for name in before.schema.names:
                     if name not in {"task_index","index","episode_index"} and not before.column(name).equals(after.column(name)):
@@ -352,11 +373,14 @@ def validate_output(source, output, labels):
                 if after.column("frame_index").to_pylist()!=list(range(count,count+n)):raise ValueError("Frame index mismatch")
                 ids=after.column("task_index").to_pylist()
                 if [tasks.get(i) for i in ids]!=text[count:count+n]:raise ValueError("Task/frame mapping mismatch")
+                if staged:
+                    if after.column('stage_index').to_pylist()!=expected_ids[count:count+n]:raise ValueError('Frame stage_index mismatch')
                 actual_indices.extend(ids);count+=n
         if count!=old["length"]:raise ValueError("Frame count mismatch")
         expected_stats=deepcopy(source["stats"][old_ep]);expected_stats["episode_index"]=new_ep
         for name,values in [("task_index",actual_indices),("episode_index",[new_ep]*count),("index",list(range(offset,offset+count)))]:
             expected_stats["stats"][name]=task_stats(values)
+        if staged:expected_stats['stats']['stage_index']=task_stats(expected_ids)
         if expected_stats!=delivered["stats"][new_ep]:raise ValueError("Statistics mismatch")
         for camera in source["cameras"]:
             if sha256(artifact(source["root"],path_for(source["info"],old_ep,video_key=camera)))!=sha256(artifact(output,path_for(delivered["info"],new_ep,video_key=camera))):

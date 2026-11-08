@@ -136,7 +136,13 @@ def runtime(settings, task):
     # Annotation options do NOT recreate capture/conversion queues or source batches.
     semantic = {k: v for k, v in task.items() if k not in ('name', 'enabled', 'auto_upload_paths', 'delete_lerobot') and not k.startswith('annotation_')}
     version = digest({'task': semantic, 'data_server': settings['data_server'], 'training_server': settings['training_server'],
-                      'protocol': 'gui-workflow-v1'})[:20]
+                      'protocol': 'gui-seven-stage-review-v1' if task.get('annotation_enabled') else 'gui-workflow-v1'})[:20]
+    binding_path=ROOT/'runtime-bindings'/(task['id']+'.json')
+    binding=json.loads(binding_path.read_text()) if binding_path.exists() else None
+    if binding and binding.get('requested_version')==version:
+        if not re.fullmatch(r'[a-f0-9]{20}',str(binding.get('version',''))):raise ValueError('无效兼容运行版本')
+        version=binding['version']
+    else:binding=None
     root = ROOT / 'runs' / task['id'] / version
     root.mkdir(parents=True, exist_ok=True)
     source = Path(task['source'])
@@ -148,7 +154,7 @@ def runtime(settings, task):
     cfg = {'schema_version': 1, 'state_root': str(root/'capture/state'), 'work_root': str(root/'capture/work'),
            'local_batch_root': str(root/'capture/batches'), 'remote_raw_root': task['raw_root'],
            'remote_dataset_root': task['lerobot_root'], 'delivery_mode': 'daily', 'batch_hours': 24,
-           'delete_raw_after_upload': task['delete_raw'], 'cleanup_intermediates': True,
+           'delete_raw_after_upload': task['delete_raw'], 'cleanup_intermediates': not task.get('annotation_enabled',False),
            'poll_seconds': 5, 'stable_scans': 3, 'stable_seconds': 60, 'retry_seconds': 30,
            'max_attempts': 3, 'max_jobs_per_scan': 1, 'initial_history': {'mode': 'all' if task['include_existing'] else 'none'},
            'routes': routes,
@@ -157,6 +163,8 @@ def runtime(settings, task):
     file = root/'capture.yaml'
     if not file.exists(): file.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     capture = load_capture(file)
+    # Scratch cleanup is operational: immutable LeRobot and originals stay retained.
+    if task.get('annotation_enabled'):capture['cleanup_intermediates']=True
     # Naming is prospective metadata, not a new input/transfer queue. Existing
     # catalogued batches keep their own format; only newly opened batches opt in.
     for route in capture['routes']:route['batch_name_format']='completion-mmdd-v1'
@@ -165,13 +173,50 @@ def runtime(settings, task):
                 'training_target': settings['training_server']}
     training['fingerprint'] = digest({'capture': capture['fingerprint'], 'task': semantic,
                                       'training_target': settings['training_server'], 'protocol': 'gui-native-training-v1'})
+    if binding:
+        if capture['fingerprint']!=binding['capture_fingerprint']:raise ValueError('兼容迁移的采集身份发生变化')
+        training['fingerprint']=binding['training_fingerprint']
     spec = {'root': str(root), 'capture_file': str(file), 'capture': capture, 'training': training,
             'training_delivery': delivery, 'task': task, 'data_server': settings['data_server'], 'training_server': settings['training_server']}
     annotation={'enabled':task.get('annotation_enabled',False),'root':str(ROOT/'annotation'/task['id']/version),
         'credential_root':str(ROOT),'include_existing':task.get('annotation_include_existing',False),
         'model':task.get('annotation_model','doubao-seed-2-0-lite-260428'),
+        'review_required':True,'collection_mode':'directory','protocol':'tomato-seven-stages-v1',
         'fps':task.get('annotation_fps',5.0),'retries':task.get('annotation_retries',2),'min_free_gib':8}
     spec['annotation']=annotation
     if annotation['enabled']:training['annotation']={'spec':spec['annotation']}
     durable_json(root/'spec.json', spec)
     return root, spec
+
+
+def bind_training_destinations(settings,task,root):
+    """Explicit stopped-task migration for *unpublished* training destination changes.
+
+    Source/robot/data-server and capture semantics must be identical. Preserve
+    all queue identities and local artifacts; never use this for published pairs.
+    """
+    import sqlite3,time
+    root=Path(root)
+    old=json.loads((root/'spec.json').read_text())
+    mutable={'normal_root','speedup_root','name','auto_upload_paths','delete_lerobot'}
+    if ({k:v for k,v in old['task'].items() if k not in mutable} !=
+            {k:v for k,v in task.items() if k not in mutable} or
+            old['data_server']!=settings['data_server'] or old['training_server']!=settings['training_server']):
+        raise ValueError('仅允许兼容修改训练上传路径；输入或采集身份已变化')
+    state_path=root/'runtime.json'
+    if state_path.exists() and json.loads(state_path.read_text()).get('state') not in ('stopped','error'):
+        raise ValueError('兼容迁移前必须正常停止任务')
+    dbpath=Path(old['training']['state_root'])/'queue.sqlite3'
+    if dbpath.exists():
+        with sqlite3.connect(dbpath.as_uri()+'?mode=ro',uri=True) as db:
+            if db.execute("SELECT 1 FROM tasks WHERE state IN ('uploaded','uploading') LIMIT 1").fetchone():
+                raise ValueError('训练成品已发布或上传尚未收尾，不允许重定向历史交付')
+    semantic={k:v for k,v in task.items() if k not in ('name','enabled','auto_upload_paths','delete_lerobot') and not k.startswith('annotation_')}
+    requested=digest({'task':semantic,'data_server':settings['data_server'],'training_server':settings['training_server'],
+                      'protocol':'gui-seven-stage-review-v1' if task.get('annotation_enabled') else 'gui-workflow-v1'})[:20]
+    receipt={'requested_version':requested,'version':root.name,'capture_fingerprint':old['capture']['fingerprint'],
+             'training_fingerprint':old['training']['fingerprint'],'created_ns':time.time_ns(),
+             'old_destinations':{k:old['task'][k] for k in ('normal_root','speedup_root')},
+             'new_destinations':{k:task[k] for k in ('normal_root','speedup_root')}}
+    durable_json(ROOT/'runtime-bindings'/(task['id']+'.json'),receipt)
+    return receipt

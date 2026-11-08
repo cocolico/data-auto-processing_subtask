@@ -143,19 +143,17 @@ def test_old_evidence_field_is_readable_but_not_requested_in_new_prompt():
 
 
 def test_compact_prompt_normalizes_and_derives_exact_requested_keys():
-    text = TOMATO_WORKFLOW_PROMPT.format(hand='Wuji')
-    raw = text.split('Example shape (not a video observation):\n')[1].strip()
-    fine = normalize(raw, 30, 30, require_workflow=True)
-    assert set(fine[0]) == {'start_frame', 'end_frame', 'phase', 'text', 'target_id', 'decision', 'return_condition'}
-    result = derive(fine, 30, 30)
-    assert set(result['coarse_steps'][0]) == {'phase', 'text', 'start_frame', 'end_frame', 'fine_step_indices'}
-    assert set(result['categories'][0]) == {'phase', 'text'}
-    assert result['schema_version'] == 'tomato-dual-granularity-v3'
-    assert 'text_zh' not in json.dumps(result)
-    assert 'coarse_full_coverage' not in result
-    for removed in ['evidence_status', 'attempt_id', 'left_action', 'right_action', 'outcome', 'outcome_evidence', 'evidence_note', 'picked_ids', 'remaining_ids', 'reachable_ids', 'blocked_ids', 'blocked_reasons', 'right_grasp', 'intended_effect']:
-        assert f'"{removed}"' not in raw
-        assert removed not in json.dumps(result)
+    from convest.annotation import stages
+    from test_seven_stage_review import labels
+    fine=labels(210)
+    raw={'steps':[{k:v for k,v in s.items() if k not in ('start_frame','end_frame')} |
+                  {'start_sec':s['start_frame']/30,'end_sec':s['end_frame']/30} for s in fine]}
+    parsed=normalize(json.dumps(raw),210,30,require_workflow=True)
+    assert parsed==fine
+    result=stages.record(parsed,30,210)
+    assert set(result)=={'schema_version','fps','length','interval_convention','steps'}
+    assert set(parsed[0])==stages.FIELDS
+    assert 'coarse_steps' not in result and 'fine_steps' not in result
 
 
 def test_compact_nested_fields_and_roundtrip():

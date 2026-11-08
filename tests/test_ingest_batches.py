@@ -217,6 +217,9 @@ def test_dated_batch_uses_last_completed_generation_beijing_date_and_keeps_legac
     from zoneinfo import ZoneInfo
     import convest.ingest.publish as generation
     cfg=service
+    # Keep the test clock consistent with the deliberately dated generations.
+    # Otherwise the real current date can seal the first batch between appends.
+    monkeypatch.setattr(time,'time_ns',lambda:int(datetime(2026,10,27,0,0,2,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()*1e9))
     route=cfg['routes'][2]
     route['batch_name_format']='completion-mmdd-v1'
     stamps=iter(int(datetime.fromisoformat(d).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()*1e9)

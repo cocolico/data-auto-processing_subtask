@@ -41,14 +41,14 @@ class Handler(BaseHTTPRequestHandler):
             if route.path=='/api/logs':return self.send({'text':self.server.manager.logs(query.get('task',[''])[0])})
             if route.path=='/api/annotation/preview':
                 from convest.annotation.preview import describe
-                return self.send(describe(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0]))
+                return self.send(describe(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0],query.get('variant',['draft'])[0]))
             if route.path=='/api/annotation/trial-preview':
                 from convest.annotation.trial_preview import describe
                 return self.send(describe(query.get('run',[''])[0]))
             if route.path=='/api/annotation/video':
                 if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):return self.send({'error':'预览令牌无效'},403)
                 from convest.annotation.preview import video
-                path=video(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0],query.get('camera',[''])[0])
+                path=video(self.server.manager.annotation_spec(query.get('task',[''])[0]),query.get('job',[''])[0],query.get('camera',[''])[0],query.get('variant',['draft'])[0])
                 return self.video(path)
             if route.path=='/api/annotation/trial-video':
                 if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):return self.send({'error':'预览令牌无效'},403)
@@ -60,10 +60,10 @@ class Handler(BaseHTTPRequestHandler):
                 spec=self.server.manager.annotation_spec(query.get('task',[''])[0])
                 identity=query.get('job',[''])[0];format=query.get('format',[''])[0]
                 if route.path.endswith('viewer-status'):
-                    return self.send(visualization.status(spec,identity,format))
+                    return self.send(visualization.status(spec,identity,format,query.get('variant',['draft'])[0]))
                 if not secrets.compare_digest(query.get('token',[''])[0],self.server.token):
                     return self.send({'error':'预览令牌无效'},403)
-                path=visualization.artifact(spec,identity,format)
+                path=visualization.artifact(spec,identity,format,query.get('variant',['draft'])[0])
                 return self.video(path,mime='application/octet-stream',download=f'annotation.{format}')
             files={'/':'index.html','/app.js':'app.js','/annotation.js':'annotation.js','/review.js':'review.js','/style.css':'style.css','/brand-logo.png':'brand-logo.png'}
             if route.path in files:
@@ -86,12 +86,23 @@ class Handler(BaseHTTPRequestHandler):
             if route=='/api/save':return self.send({'settings':m.save(body)})
             if route=='/api/resume':
                 m.resume_on_open();return self.send(m.snapshot())
+            if route=='/api/annotation/review':
+                from convest.annotation.review import edit
+                return self.send(edit(m.annotation_spec(body['task']),body['job'],body['revision'],body.get('steps'),
+                                      action=body.get('action','save'),reason=body.get('reason','')))
+            if route=='/api/annotation/review-cycle':
+                from convest.annotation import review
+                action=body.get('action')
+                if action not in ('freeze','release','next'):raise ValueError('无效审核批次操作')
+                spec=m.annotation_spec(body['task'])
+                value=review.release(spec,acknowledge_errors=body.get('acknowledge_errors',False)) if action=='release' else {'freeze':review.freeze,'next':review.next_cycle}[action](spec)
+                return self.send({'cycle':value})
             if route=='/api/annotation/manual-save':
                 from .manual_review import save
                 return self.send(save(body['directory'], body['payload']))
             if route=='/api/annotation/viewer-export':
                 from convest.annotation.visualization import start
-                return self.send(start(m.annotation_spec(body['task']),body['job'],body['format']))
+                return self.send(start(m.annotation_spec(body['task']),body['job'],body['format'],body.get('variant','draft')))
             if route=='/api/annotation/key':
                 from convest.annotation import credentials
                 return self.send(credentials.save(m.root,body.get('key')))

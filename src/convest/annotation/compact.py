@@ -6,6 +6,8 @@ MODEL_FIELDS = frozenset(('start_sec', 'end_sec', 'phase', 'text', 'target_id', 
 
 
 def project(steps):
+    from . import stages
+    if stages.is_stages(steps):return stages.canonical(steps)
     result = []
     for step in steps:
         row = {key: deepcopy(step.get(key)) for key in FIELDS}
@@ -18,6 +20,9 @@ def project(steps):
 
 
 def validate(steps):
+    from . import stages
+    if stages.is_stages(steps):
+        stages.validate(steps,steps[-1]['end_frame']);return
     import re
     from .workflow import PHASES, DECISION_PHASES
     choices = {'CONTINUE_PICK', 'RETRY_SAME_TARGET', 'REGRASP', 'STOP', 'UNKNOWN'}

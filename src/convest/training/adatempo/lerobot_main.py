@@ -37,6 +37,9 @@ def process(source, destination, *, workers=4, cmax=3.0):
         for entry, result, trace in zip(metadata, results, traces):
             ep = entry["episode_index"]
             obs, act = np.asarray(result["source_index"]), np.asarray(result["action_source_index"])
+            if labels is not None:
+                obs=annotations.protect_stages(labels[ep],obs,entry['length'])
+                act=np.r_[obs[1:],entry['length']-1]
             alignment = None
             if labels is not None:
                 mapped_labels.append(annotations.remap(labels[ep], obs))
@@ -91,6 +94,9 @@ def process(source, destination, *, workers=4, cmax=3.0):
                "gripper_descriptor": "disabled; continuous hand commands already included in native-dimensional motion",
                "video_encoding": "h264 yuv420p CRF 18; nearest input frame; uniform original fps"}
     summary['task_labels']='discrete nearest observation-frame mapping; never interpolated'
+    if labels and 'steps' in labels[0]:
+        summary['annotation_sampling']='preserve one anchor for every stage, including a one-frame tail; may add frames to the AdaTempo grid'
+        summary['cmin']=None
     dump(destination / "processing/summary.json", summary)
     print(json.dumps(summary), flush=True)
     return summary

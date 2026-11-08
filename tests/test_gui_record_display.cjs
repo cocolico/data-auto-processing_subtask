@@ -6,7 +6,7 @@ const path = require('node:path');
 
 test('clearing masks existing rows across refresh and task switches, then shows new rows', () => {
   const elements = new Map();
-  const context = vm.createContext({ document: { getElementById(id) {
+  const context = vm.createContext({ window: {}, document: { getElementById(id) {
     if (!elements.has(id)) elements.set(id, {
       classList: { toggle() {} }, getAttribute: () => 'true',
     });

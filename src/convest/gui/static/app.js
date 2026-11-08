@@ -472,6 +472,15 @@ function renderProgress() {
     else if (training.length && training.every((j) => j.state === "uploaded"))
       phase = "已发现的录制与两版成品均已校验上传，继续监听新录制。";
   }
+  if (s.state === "running" && s.annotation?.enabled) {
+    const gate = s.annotation.review_cycle?.state;
+    if (gate === "review" || gate === "sealing") {
+      phase = gate === "sealing" ? "正在收尾当前录制并封存审核批次；暂停上传与删除。" : "本轮目录已处理结束，等待统一人工审核；本轮数据尚未上传。请逐条审核后放行。";
+      $("run-state").textContent = gate === "review" ? "等待人工审核" : "正在封存审核批次";
+    } else if (gate === "released") {
+      phase = "本批已审核放行，生成 normal/speedup 并上传；完成后可继续接收下一批。";
+    }
+  }
   if (s.error) phase = s.error;
   $("current-phase").textContent = phase;
   $("transfer-grid").innerHTML =

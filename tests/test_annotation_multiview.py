@@ -29,10 +29,11 @@ def source_job(tmp_path):
 
 
 def reply():
-    return SimpleNamespace(id='response-id', usage=None, output_text=json.dumps({'steps': [{
-        'start_sec': 0, 'end_sec': 1, 'phase': 'GRASP_CLUSTER',
-        'text': 'Grasp the tomato truss securely with the right hand.',
-        'target_id': None, 'decision': None, 'return_condition': None}]}))
+    from convest.annotation.stages import CATEGORIES
+    return SimpleNamespace(id='response-id',usage=None,output_text=json.dumps({'steps':[
+        {'stage_index':i,'phase':phase,'text':text,'start_sec':(i*30//7)/30,'end_sec':((i+1)*30//7)/30}
+        for i,(phase,_,text) in enumerate(CATEGORIES)]}))
+
 
 
 class FakeClient:
@@ -83,7 +84,7 @@ def test_three_videos_sent_once_with_camera_ownership_and_same_timeline(tmp_path
     assert 'cam1: RIGHT wrist' in content[3]['text']
     assert 'cam2: LEFT wrist' in content[5]['text']
     assert 'same clip-local zero' in fake.requests[0]['instructions']
-    assert labels[0]['start_frame'] == 0 and labels[0]['end_frame'] == 30
+    assert labels[0]['start_frame'] == 0 and labels[-1]['end_frame'] == 30
     assert fake.deleted == ['file-0', 'file-1', 'file-2'] and fake.closed
     assert all(json.loads(p.read_text())['cleanup'] == 'completed' for p in work.rglob('remote_file.json'))
     assert ArkProvider().annotate(job, 'test-key', work)[0] == labels
@@ -177,5 +178,5 @@ def test_durable_response_id_is_recovered_without_upload_or_new_inference(tmp_pa
     work = tmp_path/'request'
     atomic_json(work/'request.json', {'phase': 'returned', 'response_id': 'response-id'})
     labels, _ = ArkProvider().annotate(job, 'test-key', work)
-    assert labels[0]['end_frame'] == 30
+    assert labels[-1]['end_frame'] == 30
     assert not fake.uploads and not fake.requests and fake.closed

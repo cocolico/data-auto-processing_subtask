@@ -24,7 +24,7 @@ def read(path):
 def recipe(cfg):
     root = Path(__file__).parent
     code = {str(p.relative_to(root)): digest(p.read_text()) for p in root.rglob('*.py')}
-    for name in ('granularity.py', 'compact.py'):
+    for name in ('granularity.py', 'compact.py', 'stages.py'):
         code['annotation/'+name] = digest((root.parent/'annotation'/name).read_text())
     return digest({'code': code, 'cmax': cfg['cmax'], 'workers': cfg['workers'],
                    'protocol': 'native-vectors-recorded-flags-v1'})

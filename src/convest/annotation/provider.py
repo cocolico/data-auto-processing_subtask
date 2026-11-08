@@ -84,6 +84,9 @@ def normalize(raw, length, fps, *, require_structured=False, require_events=Fals
     value = json.loads(text)
     if not isinstance(value, dict) or set(value) != {'steps'} or not isinstance(value['steps'], list):
         raise ValueError('标注格式缺少 steps')
+    from . import stages
+    if value['steps'] and any(isinstance(row, dict) and row.get('phase') in stages.PHASES for row in value['steps']):
+        return stages.normalize(value, length, fps)
     from .compact import MODEL_FIELDS, validate as validate_compact
     if value['steps'] and all(isinstance(row, dict) and set(row) == MODEL_FIELDS for row in value['steps']):
         result = []
@@ -188,12 +191,20 @@ def classify(exc, key=None, sent=False):
 
 
 class ArkProvider:
+    @staticmethod
+    def normalize_production(text, job):
+        from . import stages
+        raw = text.strip()
+        if raw.startswith('```') and raw.endswith('```'):
+            raw = '\n'.join(raw.splitlines()[1:-1])
+        return stages.normalize(json.loads(raw), job['length'], job['fps'])
+
     def annotate(self, job, key, work, progress=lambda **kw:None):
         work=Path(work);work.mkdir(parents=True,exist_ok=True)
         response_file=work/'response.json'
         if response_file.exists():
             response=json.loads(response_file.read_text())
-            return normalize(response['text'],job['length'],job['fps'],require_structured=True,require_events=True,require_workflow=True),response.get('usage',{})
+            return self.normalize_production(response['text'],job),response.get('usage',{})
         # Previously returned raw replies can be revalidated without another bill.
         try:
             from .client import create_client
@@ -264,7 +275,7 @@ class ArkProvider:
             # Save raw response durably BEFORE schema validation.
             atomic_json(response_file,{'text':text,'usage':usage,'response_id':getattr(response,'id',None),
                 'protocol':request.get('protocol'),'cameras':list(request.get('file_ids',{}))})
-            return normalize(text,job['length'],job['fps'],require_structured=True,require_events=True,require_workflow=True),usage
+            return self.normalize_production(text,job),usage
         except Exception as exc:
             raise classify(exc,key,sent) from exc
         finally:

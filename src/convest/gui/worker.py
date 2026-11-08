@@ -61,6 +61,9 @@ def capture_upload(spec, queue):
     raw = [r for r in rows if json.loads(r['payload'])['kind']=='raw']
     from convest.annotation import service as annotation
     if annotation.enabled(spec):
+        from convest.annotation.review import required
+        if required(spec):
+            raw=[r for r in raw if annotation.delivery(spec,r['route'],json.loads(r['payload'])['batch_id'])['state'] in ('completed','empty')]
         ready=[]
         for r in batches:
             outcome=annotation.delivery(spec,r['route'],json.loads(r['payload'])['batch_id'])
@@ -147,6 +150,10 @@ def training_upload(spec, db):
         return transfer(*args, **kwargs)
     row=db.execute("SELECT * FROM tasks WHERE state IN ('local_ready','upload_retry','uploading') AND next_ns<=? ORDER BY updated_ns,id LIMIT 1",(time.time_ns(),)).fetchone()
     if not row: return False
+    from convest.annotation import review,service as annotation
+    if review.required(spec):
+        source_spec=json.loads(row['spec'])
+        if annotation.delivery(spec,source_spec['route'],source_spec['batch_id'])['state']!='completed':return False
     p=json.loads(row['payload']); tid=row['id']; results={}
     latest = {}
     def progress_for(variant, artifact='dataset', announce=True):
@@ -242,13 +249,28 @@ def role(spec, name):
     if name=='training-process':sys.stdout=VideoProgress(sys.stdout,cfg)
     with context(cfg,'upload' if name.endswith('upload') else 'processing') as q:
         while not stop[0]:
+            from convest.annotation import review
+            if review.required(spec):
+                if name=='capture-process':
+                    from convest.annotation import directory_round
+                    if directory_round.enabled(spec):
+                        directory_round.apply_scope(spec,cfg)
+                        if review.cycle(spec)['state']=='collecting' and directory_round.gate_ready(spec):review.freeze(spec)
+                    else:
+                        with annotation.database(spec) as adb:
+                            waiting=adb.execute("SELECT 1 FROM episodes WHERE state IN ('needs_review','reviewing','approved','rejected') AND updated_ns>=? LIMIT 1",(review.cycle(spec).get('started_ns',0),)).fetchone()
+                        if waiting and review.cycle(spec)['state']=='collecting':review.freeze(spec)
+                    if review.cycle(spec)['state']!='collecting':
+                        try:review.seal_if_requested(spec,q)
+                        except Exception as exc:print('审核批次封存待恢复：'+str(exc),flush=True)
+                        time.sleep(.5);continue
             if annotation.enabled(spec) and annotation.blocked(spec):
                 time.sleep(.5);continue
             if name=='capture-process' and not annotation.disk_ok(spec):
                 # Sealing and uploads can free space; do not start new conversion.
                 daily.maintain(cfg,q)
                 time.sleep(1);continue
-            if name=='capture-process': scan(cfg,q,should_stop=lambda:stop[0])
+            if name=='capture-process': scan(cfg,q,should_stop=lambda:stop[0] or (review.required(spec) and review.cycle(spec)['state']!='collecting'))
             elif name=='capture-upload': capture_upload(spec,q)
             elif name=='training-process':
                 training.discover(cfg,q)
@@ -276,6 +298,8 @@ def supervise(spec):
             from convest.annotation import service as annotation
             if annotation.enabled(spec):
                 with annotation.database(spec) as db:annotation.discover(spec,db)
+                from convest.annotation import directory_round
+                directory_round.ensure(spec)
                 roles.append('annotation-process')
             for name in roles:
                 with (root/(name+'.log')).open('a') as log:

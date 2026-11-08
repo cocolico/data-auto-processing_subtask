@@ -59,7 +59,7 @@ def validate_output(source, output):
         require(np.all(values(table, "episode_index") == ep), "episode_index mismatch")
         for key, positions in [("observation.state", obs), ("action", act)]:
             require(np.allclose(values(table, key), interpolate(values(old, key), positions), rtol=1e-6, atol=1e-6), f"numeric mapping mismatch: {key}")
-        for key in [name for name in ("observation.engaged", "observation.arm_engaged", "task_index", "source_timestamp_ns") if name in old.column_names]:
+        for key in [name for name in ("observation.engaged", "observation.arm_engaged", "task_index", "stage_index", "source_timestamp_ns") if name in old.column_names]:
             require(np.array_equal(values(table, key), values(old, key)[nearest_frames(obs)]), f"nearest mapping mismatch: {key}")
         vocabulary={r['task_index']:r['task'] for r in lines(output/'meta/tasks.jsonl')}
         require(entry.get('tasks')==list(dict.fromkeys(vocabulary[int(i)] for i in values(table,'task_index'))),'speedup task metadata mismatch')

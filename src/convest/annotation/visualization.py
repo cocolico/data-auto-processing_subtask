@@ -24,12 +24,12 @@ _lock = threading.Lock()
 _jobs = {}
 
 
-def _request(spec, identity, format):
+def _request(spec, identity, format, variant='draft'):
     from .preview import describe, video
     if format not in FORMATS or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', identity):
         raise ValueError('无效的查看器格式或结果 ID')
-    data = describe(spec, identity)
-    cameras = {key: str(video(spec, identity, key)) for key in data['cameras']
+    data = describe(spec, identity) if variant=='draft' else describe(spec, identity,variant)
+    cameras = {key: str(video(spec, identity, key) if variant=='draft' else video(spec,identity,key,variant)) for key in data['cameras']
                if key in ('observation.images.cam0', 'observation.images.cam1', 'observation.images.cam2')
                and data['camera_status'][key]['available']}
     if not cameras:
@@ -44,8 +44,8 @@ def _request(spec, identity, format):
     return data, cameras, root, root/f'preview.{format}'
 
 
-def status(spec, identity, format):
-    _, _, root, output = _request(spec, identity, format)
+def status(spec, identity, format, variant='draft'):
+    _, _, root, output = _request(spec, identity, format,variant)
     with _lock:
         job = _jobs.get(str(output))
         if job and job['state'] != 'completed':
@@ -55,8 +55,8 @@ def status(spec, identity, format):
     return {'state': 'idle', 'message': '尚未生成查看器文件。'}
 
 
-def start(spec, identity, format):
-    data, cameras, root, output = _request(spec, identity, format)
+def start(spec, identity, format, variant='draft'):
+    data, cameras, root, output = _request(spec, identity, format,variant)
     if find_spec(FORMATS[format]) is None:
         raise ValueError('未安装可视化 SDK；请在当前运行环境安装项目的 visualization 可选依赖')
     root.mkdir(parents=True, exist_ok=True)
@@ -92,8 +92,8 @@ def _run(request, key):
         _jobs[key] = value
 
 
-def artifact(spec, identity, format):
-    _, _, _, output = _request(spec, identity, format)
+def artifact(spec, identity, format, variant='draft'):
+    _, _, _, output = _request(spec, identity, format,variant)
     if not output.is_file() or output.is_symlink():
         raise ValueError('查看器文件尚未生成')
     return output
@@ -172,7 +172,7 @@ def _foxglove(request, target):
     schema = {'type': 'object', 'properties': {
         'step_index': {'type': 'integer'}, 'start_frame': {'type': 'integer'},
         'end_frame': {'type': 'integer'}, 'phase': {'type': 'string'},
-        'text': {'type': 'string'}, 'target_id': {'type': ['string', 'null']},
+        'text': {'type': 'string'}, 'stage_index': {'type':'integer'}, 'target_id': {'type': ['string', 'null']},
         'decision': {'type': ['object', 'null']}, 'return_condition': {'type': ['object', 'null']}}}
     annotations = foxglove.Channel('/annotations/steps', schema=schema, context=context)
     channels = {key: CompressedImageChannel('/cameras/'+key.rsplit('.', 1)[-1], context=context,

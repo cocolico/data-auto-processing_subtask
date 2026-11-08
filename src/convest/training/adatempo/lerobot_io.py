@@ -50,6 +50,7 @@ def read_source(root):
         raise ValueError("LeRobot v2.1 with positive fps required")
     numeric = {key for key, feature in info["features"].items() if feature["dtype"] != "video"}
     expected_fields = (FIELDS - {"observation.engaged"}) | ({"observation.arm_engaged"} if "observation.arm_engaged" in numeric else {"observation.engaged"})
+    if 'stage_index' in numeric:expected_fields=expected_fields|{'stage_index'}
     if numeric != expected_fields:
         raise ValueError(f"unsupported or missing fields: {numeric ^ expected_fields}")
     metadata = lines(root / "meta/episodes.jsonl")

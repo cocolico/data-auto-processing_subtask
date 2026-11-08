@@ -1239,3 +1239,5 @@ body > main { margin-left: 176px; }
 .review-ruler span:first-child { transform:none; }
 
 .review-track-row > span { position:sticky; left:0; z-index:4; height:100%; display:flex; align-items:center; background:white; }
+
+.stage-boundary{width:7em;display:inline-block}.review-track-row[hidden],.review-coarse-details[hidden]{display:none}.review-segment.current{outline:2px solid #111827;outline-offset:-2px}

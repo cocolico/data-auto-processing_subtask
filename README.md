@@ -1,3 +1,6 @@
+> **only-coarse 分支：方案 B 单层七阶段与人工审核关卡**
+> 新任务按七阶段标注，逐条人工审核并明确放行后才生成 normal/speedup、上传及释放数据。操作和数据格式以 [七阶段人工审核说明](docs/seven-stage-review.md) 为准；下方旧粗细协议描述仅供历史版本参考。
+
 > **迁移到另一台电脑：** 请先阅读 [迁移运行说明](迁移运行说明.md)，使用 `deploy/setup_portable.sh` 安装包含标注和训练转换功能的环境。
 
 # ROS2 bag 清洗与 LeRobot v2.1 转换
