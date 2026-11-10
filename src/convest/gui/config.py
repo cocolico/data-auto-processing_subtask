@@ -191,11 +191,10 @@ def runtime(settings, task):
     return root, spec
 
 
-def bind_training_destinations(settings,task,root):
-    """Explicit stopped-task migration for *unpublished* training destination changes.
+def bind_training_destinations(settings,task,root,*,republish_ids=()):
+    """Explicit stopped-task migration for training destination changes.
 
-    Source/robot/data-server and capture semantics must be identical. Preserve
-    all queue identities and local artifacts; never use this for published pairs.
+    Published pairs require explicit selection for republication.
     """
     import sqlite3,time
     root=Path(root)
@@ -211,8 +210,11 @@ def bind_training_destinations(settings,task,root):
     dbpath=Path(old['training']['state_root'])/'queue.sqlite3'
     if dbpath.exists():
         with sqlite3.connect(dbpath.as_uri()+'?mode=ro',uri=True) as db:
-            if db.execute("SELECT 1 FROM tasks WHERE state IN ('uploaded','uploading') LIMIT 1").fetchone():
-                raise ValueError('训练成品已发布或上传尚未收尾，不允许重定向历史交付')
+            if db.execute("SELECT 1 FROM tasks WHERE state IN ('uploading','upload_retry') LIMIT 1").fetchone():
+                raise ValueError('训练上传尚未收尾，不允许修改交付路径')
+            published={row[0] for row in db.execute("SELECT id FROM tasks WHERE state='uploaded'")}
+            if published != set(republish_ids):
+                raise ValueError('已发布的训练成品须明确指定重新发布')
     semantic={k:v for k,v in task.items() if k not in ('name','enabled','auto_upload_paths','delete_lerobot') and not k.startswith('annotation_')}
     requested=digest({'task':semantic,'data_server':settings['data_server'],'training_server':settings['training_server'],
                       'protocol':'gui-seven-stage-review-v1' if task.get('annotation_enabled') else 'gui-workflow-v1'})[:20]

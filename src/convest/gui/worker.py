@@ -151,10 +151,13 @@ def training_upload(spec, db):
     row=db.execute("SELECT * FROM tasks WHERE state IN ('local_ready','upload_retry','uploading') AND next_ns<=? ORDER BY updated_ns,id LIMIT 1",(time.time_ns(),)).fetchone()
     if not row: return False
     from convest.annotation import review,service as annotation
+    p=json.loads(row['payload'])
+    if p.get('wait_for_review_release') and not review.released(spec):
+        return False
     if review.required(spec):
         source_spec=json.loads(row['spec'])
         if annotation.delivery(spec,source_spec['route'],source_spec['batch_id'])['state']!='completed':return False
-    p=json.loads(row['payload']); tid=row['id']; results={}
+    tid=row['id']; results={}
     latest = {}
     def progress_for(variant, artifact='dataset', announce=True):
         def progress(**kw):
